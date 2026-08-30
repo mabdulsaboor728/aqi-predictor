@@ -28,18 +28,18 @@ matches the corresponding training row to ~4e-12 across all 91 features.
 Model selection
 ---------------
 Heads are chosen by REGISTERED METRIC, not by version number. A retrain can be
-worse than what it replaced, so `get_best_model` means the daily job can push
+worse than what it replaced, so best-by-metric means the daily job can push
 freely while inference keeps serving the best model ever trained.
 
-  point head  selected on lowest RMSE
-  alert head  selected on highest F1  (its job is the recall/precision balance,
-                                       so RMSE would pick the wrong one)
+  point head  lowest RMSE
+  alert head  highest F1  (its job is the recall/precision balance, so RMSE
+                           would pick the wrong one)
 
 CAVEAT: cross-version metric comparison is only valid if every version was
-scored on the SAME evaluation window. train.py currently uses a fixed
-HOLDOUT_START with no end date, so the window grows over time and metrics drift
-out of comparability. Either freeze the holdout end date, or register a
-rolling-90-day metric and select on that (preferred - see SELECTION below).
+scored on the SAME evaluation window. train.py uses a fixed HOLDOUT_START with
+no end date, so the window grows and metrics slowly drift out of comparability.
+Either freeze the holdout end date, or register a rolling-90-day metric and
+select on that - SELECTION already prefers it if present.
 
 Run:
     python -m src.models.predict                 # registry, best version
@@ -67,15 +67,15 @@ FORECAST_HOURS = 24 * 5
 
 ALERT_THRESHOLD = 150
 
-# Metric preference per head, in order. The first one present on a model
-# version is used for selection. Putting the rolling metric first means the
-# module upgrades automatically once train.py starts registering it.
+# Metric preference per head, in order. The first one actually present on a
+# version is used. Listing the rolling metric first means this upgrades
+# automatically once train.py starts registering it.
 SELECTION = {
-    "point": ([("rmse_rolling90", "min"), ("RMSE", "min")]),
-    "alert": ([("alert_f1_rolling90", "max"), ("alert_f1", "max")]),
+    "point": [("rmse_rolling90", "min"), ("RMSE", "min")],
+    "alert": [("alert_f1_rolling90", "max"), ("alert_f1", "max")],
 }
 
-# operational staleness thresholds - warn, do not fail
+# operational staleness thresholds - warn, never fail
 MAX_DATA_AGE_H = 6
 MAX_MODEL_AGE_DAYS = 14
 
@@ -149,14 +149,23 @@ def fetch_weather_forecast() -> pd.DataFrame:
 def assemble(history: pd.DataFrame, forecast: pd.DataFrame):
     """Splice actuals and forecast into one continuous hourly frame.
 
-    Origin `t` is the last hour with a real AQI observation. Rows after t carry
-    weather only; their pollutant columns stay NaN, which is correct - we do not
-    have them and must not invent them.
+    Origin `t` is the last hour with an AQI value AT OR BEFORE the current
+    hour. The cap matters: Open-Meteo's air-quality endpoint returns CAMS
+    FORECAST values for future hours, not only observations. Training only ever
+    saw archived values, so letting a forecast hour become the origin would
+    build every lag and rolling feature from a different distribution than the
+    model was fitted on - and would silently report a negative data age.
+
+    Rows after t carry weather only; their pollutant columns stay NaN, which is
+    correct - we do not have them and must not invent them.
     """
-    hist = history[history[cfg.TARGET].notna()]
-    if hist.empty:
-        raise RuntimeError("no AQI observations in the history window")
-    origin = hist.index.max()
+    now = pd.Timestamp.now(tz="UTC").floor("h")
+
+    observed = history[history[cfg.TARGET].notna()]
+    observed = observed[observed.index <= now]
+    if observed.empty:
+        raise RuntimeError("no AQI observations at or before the current hour")
+    origin = observed.index.max()
 
     hist = history.loc[:origin]
     fut = forecast[forecast.index > origin]
@@ -179,7 +188,7 @@ def assemble(history: pd.DataFrame, forecast: pd.DataFrame):
             f"{holes[holes > 0].to_string()}"
         )
 
-    print(f"  spliced: {len(combined)} hours, origin = {origin}")
+    print(f"  spliced: {len(combined)} hours, origin = {origin}  (now = {now})")
     return combined, origin
 
 
@@ -227,13 +236,17 @@ def _registry():
     return _MR
 
 
+def _has_metric(model, metric: str) -> bool:
+    return metric in (model.training_metrics or {})
+
+
 def _pick_version(mr, name: str, kind: str, pin: int | None):
     """Best registered version by metric, with graceful degradation.
 
     Order of preference:
       1. explicit --version pin
-      2. get_best_model on the first metric present (rolling window if
-         registered, else the frozen holdout metric)
+      2. get_best_model on the first metric the returned model actually
+         carries (rolling window if registered, else the frozen holdout)
       3. highest version number
     """
     if pin is not None:
@@ -242,10 +255,12 @@ def _pick_version(mr, name: str, kind: str, pin: int | None):
     for metric, direction in SELECTION[kind]:
         try:
             m = mr.get_best_model(name, metric, direction)
-            if m is not None:
-                return m, f"best by {metric}", metric
         except Exception:                                     # noqa: BLE001
             continue
+        # get_best_model can return a model even when the metric is absent,
+        # which would make the log claim a selection that never happened
+        if m is not None and _has_metric(m, metric):
+            return m, f"best by {metric}", metric
 
     models = mr.get_models(name)
     if not models:
@@ -255,18 +270,27 @@ def _pick_version(mr, name: str, kind: str, pin: int | None):
 
 
 def _model_age_days(model) -> float | None:
-    """Age from the metadata we wrote at training time, if present."""
+    """Age of a registered model, or None if the timestamp is unreadable."""
+    created = getattr(model, "created", None)
+    if created is None:
+        return None
     try:
-        meta = model.training_metrics or {}
-        _ = meta            # metrics do not carry a date; fall through
-        created = getattr(model, "created", None)
-        if created:
+        if isinstance(created, (int, float)):
+            # Hopsworks returns epoch MILLISECONDS. pd.to_datetime on a bare
+            # number assumes nanoseconds and lands in 1970, which is what
+            # produced the "20696 days old" warning.
+            ts = pd.to_datetime(created, unit="ms", utc=True)
+        else:
             ts = pd.to_datetime(created, utc=True, errors="coerce")
-            if pd.notna(ts):
-                return (pd.Timestamp.now(tz="UTC") - ts).total_seconds() / 86400
-    except Exception:                                         # noqa: BLE001
-        pass
-    return None
+        if pd.isna(ts):
+            return None
+        age = (pd.Timestamp.now(tz="UTC") - ts).total_seconds() / 86400
+        # 10 years is far beyond any plausible model age; anything larger
+        # means the epoch unit was misread, so report unknown rather than
+        # emitting a nonsense staleness warning
+        return age if -1 < age < 3650 else None
+    except Exception:                                          # noqa: BLE001
+        return None
 
 
 def load_models(horizon: int, local: bool, pin: int | None, warnings: list[str]):
@@ -286,12 +310,13 @@ def load_models(horizon: int, local: bool, pin: int | None, warnings: list[str])
                 age = _model_age_days(m)
                 prov[kind] = {"version": m.version, "selected_by": how,
                               "metric": metric, "score": score,
-                              "age_days": round(age, 1) if age else None}
-                print(f"    {name}: v{m.version} ({how}"
-                      + (f", {metric}={score:.3f}" if isinstance(score, (int, float)) else "")
-                      + ")")
+                              "age_days": round(age, 1) if age is not None else None}
 
-                if age and age > MAX_MODEL_AGE_DAYS:
+                detail = f", {metric}={float(score):.3f}" if score is not None else ""
+                aged = f", {age:.0f}d old" if age is not None else ""
+                print(f"    {name}: v{m.version} ({how}{detail}{aged})")
+
+                if age is not None and age > MAX_MODEL_AGE_DAYS:
                     warnings.append(
                         f"{name} v{m.version} is {age:.0f} days old "
                         f"(threshold {MAX_MODEL_AGE_DAYS}) - retraining may be stalled"

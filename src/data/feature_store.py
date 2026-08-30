@@ -19,11 +19,10 @@ time, which powers point-in-time joins. With Delta time travel, inserting a row
 whose `unix_ts` already exists UPSERTS it, so re-running the hourly job over
 overlapping hours is safe and idempotent.
 
-Writes are CHUNKED WITH RETRY. Long single-session uploads to serverless
+Writes are chunked with retry. Long single-session uploads to serverless
 Hopsworks drop intermittently - the failure lands on the metadata commit after
 several minutes of transfer, not on the data itself. Short sessions avoid it,
-and upsert makes every retry harmless. This matters more in CI than locally:
-a GitHub runner's network is less forgiving than a laptop's.
+and upsert makes every retry harmless. This matters more in CI than locally.
 
 Setup
 -----
@@ -94,19 +93,29 @@ def get_fs():
 # frame preparation
 # --------------------------------------------------------------------------- #
 def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalise a time-indexed frame into something Hopsworks will accept.
+    """Normalise a time-indexed or time-columned frame for Hopsworks.
 
-    - `time` becomes a tz-naive UTC datetime (tz-aware types round-trip
+    - exactly one `time` column, tz-naive UTC (tz-aware types round-trip
       unreliably through the offline store)
-    - `unix_ts` int64 seconds is added as the primary key
+    - `unix_ts` int64 seconds added as the primary key
     - column names lowercased; Hopsworks does this anyway, and doing it here
       keeps local and remote schemas identical
+    - no stray index column, whatever the caller passed in
     """
     out = df.copy()
-    if not isinstance(out.index, pd.RangeIndex):
+
+    # If `time` is the index, promote it to a column. If it is ALREADY a
+    # column, discard the index entirely. A boolean-filtered frame carries a
+    # plain Index rather than a RangeIndex under pandas 2.x, and calling
+    # reset_index() on it injects a spurious `index` column that Hopsworks
+    # rejects with "index (type: 'bigint') does not exist in feature group".
+    if "time" in out.columns:
+        out = out.reset_index(drop=True)
+    else:
         out = out.reset_index()
+
     if "time" not in out.columns:
-        raise ValueError("expected a 'time' column")
+        raise ValueError("expected a 'time' column or a time-named index")
 
     ts = pd.to_datetime(out["time"], utc=True)
     out["unix_ts"] = (ts.astype("int64") // 10**9).astype("int64")
@@ -115,6 +124,11 @@ def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     for c in out.select_dtypes("float32").columns:
         out[c] = out[c].astype("float64")
+
+    if "index" in out.columns:
+        # belt and braces: nothing above should produce this, but a silent
+        # schema mismatch costs a full CI cycle to diagnose
+        raise ValueError("stray 'index' column - would break the feature group schema")
 
     dupes = int(out["unix_ts"].duplicated().sum())
     if dupes:
@@ -194,7 +208,7 @@ def _restore_index(df: pd.DataFrame) -> pd.DataFrame:
     upsert), an `ingested_at` column would be needed here to deduplicate.
     With Delta the store already holds one row per key.
     """
-    df = df.drop(columns=["unix_ts"], errors="ignore")
+    df = df.drop(columns=["unix_ts", "index"], errors="ignore")
     df["time"] = pd.to_datetime(df["time"], utc=True)
     return df.sort_values("time").set_index("time")
 
@@ -295,6 +309,9 @@ def do_incremental(fs) -> None:
     rows: CAMS revises recently published hours, and upsert lets those
     corrections propagate at no cost. Under time_travel_format="NONE" this
     would append duplicates instead, and the cutoff would have to be `last`.
+
+    Note the .copy() on each filtered frame - a boolean-filtered slice is a
+    view, and to_hopsworks_frame mutates its input's columns.
     """
     print(f"INCREMENTAL - last {INCREMENTAL_LOOKBACK_H}h plus any new rows")
     last = latest_timestamp(fs, RAW_FG)
@@ -309,12 +326,12 @@ def do_incremental(fs) -> None:
 
     clean = pd.read_parquet(cfg.DATA_INTERIM / "clean.parquet")
     clean["time"] = pd.to_datetime(clean["time"], utc=True)
-    write_raw(fs, clean[clean["time"] > cutoff])
+    write_raw(fs, clean[clean["time"] > cutoff].copy())
 
     for h in cfg.HORIZONS_H:
         d = pd.read_parquet(cfg.DATA_PROCESSED / f"dataset_h{h}.parquet")
         d["time"] = pd.to_datetime(d["time"], utc=True)
-        write_features(fs, h, d[d["time"] > cutoff])
+        write_features(fs, h, d[d["time"] > cutoff].copy())
 
 
 def do_check(fs) -> None:
