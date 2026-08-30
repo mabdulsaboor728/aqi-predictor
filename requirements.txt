@@ -1,0 +1,25 @@
+# Core
+pandas>=2.0,<3.0
+numpy>=1.24
+pyarrow>=14.0
+requests>=2.31
+
+# Modelling
+scikit-learn>=1.4
+xgboost>=2.0
+joblib>=1.3
+
+# Feature store / registry
+hopsworks>=4.0
+deltalake>=0.20
+
+# Analysis and reporting
+matplotlib>=3.7
+shap>=0.44
+
+# Dashboard
+streamlit>=1.30
+plotly>=5.18
+
+# Deep-learning comparison arm (not needed by CI - install locally)
+# torch>=2.2
