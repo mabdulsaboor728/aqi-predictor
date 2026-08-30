@@ -1,0 +1,20 @@
+# secrets
+.env
+*.key
+
+# virtualenv
+.aqip/
+venv/
+.venv/
+
+# data (rebuilt from the feature store)
+/data/
+
+# python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store
+
+# sequence models (large, and not part of the production stack)
+models/seq_*.pt

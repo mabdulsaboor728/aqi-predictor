@@ -1,0 +1,67 @@
+{
+  "city": "Islamabad",
+  "issued_at": "2026-08-30T16:25:41.275493+00:00",
+  "data_through": "2026-08-29T23:00:00+00:00",
+  "data_age_hours": 17.4,
+  "current_aqi": 122.0,
+  "current_category": "Unhealthy for Sensitive Groups",
+  "forecast": [
+    {
+      "horizon_h": 24,
+      "valid_at": "2026-08-30T23:00:00+00:00",
+      "aqi": 113.4,
+      "aqi_upper_q90": 137.7,
+      "category": "Unhealthy for Sensitive Groups",
+      "colour": "#ff7e00",
+      "alert": false,
+      "alert_reason": null,
+      "models": {
+        "point": {
+          "version": "local"
+        },
+        "alert": {
+          "version": "local"
+        }
+      }
+    },
+    {
+      "horizon_h": 48,
+      "valid_at": "2026-08-31T23:00:00+00:00",
+      "aqi": 109.9,
+      "aqi_upper_q90": 140.6,
+      "category": "Unhealthy for Sensitive Groups",
+      "colour": "#ff7e00",
+      "alert": false,
+      "alert_reason": null,
+      "models": {
+        "point": {
+          "version": "local"
+        },
+        "alert": {
+          "version": "local"
+        }
+      }
+    },
+    {
+      "horizon_h": 72,
+      "valid_at": "2026-09-01T23:00:00+00:00",
+      "aqi": 96.7,
+      "aqi_upper_q90": 124.6,
+      "category": "Moderate",
+      "colour": "#ffff00",
+      "alert": false,
+      "alert_reason": null,
+      "models": {
+        "point": {
+          "version": "local"
+        },
+        "alert": {
+          "version": "local"
+        }
+      }
+    }
+  ],
+  "warnings": [
+    "observations are 17h old (threshold 6h) - the hourly ingestion job may not be running"
+  ]
+}

@@ -1,0 +1,67 @@
+name: hourly
+
+# Feature pipeline + live forecast, every hour.
+#
+# The runner filesystem is ephemeral, so this does NOT rely on cached data.
+# pipelines/hourly.py reads history from the Hopsworks feature store, fetches
+# only the last few days from Open-Meteo, rebuilds, and pushes the tail back.
+
+on:
+  schedule:
+    # 7 past the hour: Open-Meteo publishes on the hour, and GitHub's scheduler
+    # is queued rather than exact, so a few minutes of slack avoids racing it.
+    - cron: "7 * * * *"
+  workflow_dispatch:        # manual trigger, useful for the first run
+
+# a slow run must never overlap the next hour's
+concurrency:
+  group: hourly
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # needed to commit the forecast JSON
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run hourly pipeline
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: python -m pipelines.hourly
+
+      - name: Commit forecast
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # append to a rolling history so the dashboard can show past accuracy
+          mkdir -p reports/history
+          cp reports/latest_forecast.json \
+             "reports/history/forecast_$(date -u +%Y%m%dT%H).json"
+          git add reports/latest_forecast.json reports/history/
+          git diff --staged --quiet || git commit -m "forecast $(date -u +'%Y-%m-%d %H:00 UTC')"
+          git push
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hourly-debug-${{ github.run_id }}
+          path: |
+            data/interim/
+            reports/
+          retention-days: 5

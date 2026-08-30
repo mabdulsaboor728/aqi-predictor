@@ -1,0 +1,71 @@
+[
+  {
+    "horizon": 24,
+    "explainer": "tree",
+    "n_explained": 4000,
+    "group_pct": {
+      "aqi_history": 49.11,
+      "weather_forecast": 23.77,
+      "pollutant_history": 21.48,
+      "calendar": 5.64
+    },
+    "top10": {
+      "us_aqi_t": 15.6545,
+      "wind_rmean24_f_h24": 4.0396,
+      "pm2_5_delta24_t": 1.8148,
+      "us_aqi_lag168_t": 1.8133,
+      "dew_point_2m_f_h24": 1.4457,
+      "doy_cos_f_h24": 1.4273,
+      "us_aqi_lag48_t": 1.3081,
+      "temp_rmean24_f_h24": 1.0863,
+      "pm25_pm10_ratio_t": 1.035,
+      "pm2_5_lag1_t": 0.9127
+    }
+  },
+  {
+    "horizon": 48,
+    "explainer": "permutation",
+    "n_explained": 4000,
+    "group_pct": {
+      "weather_forecast": 37.53,
+      "aqi_history": 32.1,
+      "pollutant_history": 15.82,
+      "calendar": 14.55
+    },
+    "top10": {
+      "us_aqi_t": 5.902,
+      "dew_point_2m_f_h48": 4.2807,
+      "wind_rmean48_f_h48": 4.1005,
+      "doy_cos_f_h48": 3.7947,
+      "temp_rmean24_f_h48": 3.499,
+      "us_aqi_rmean168_t": 2.9545,
+      "temp_rmean48_f_h48": 2.7747,
+      "hour_sin_f_h48": 2.6792,
+      "temp_rmean72_f_h48": 2.655,
+      "doy_sin_f_h48": 2.4918
+    }
+  },
+  {
+    "horizon": 72,
+    "explainer": "permutation",
+    "n_explained": 4000,
+    "group_pct": {
+      "weather_forecast": 37.8,
+      "aqi_history": 27.92,
+      "calendar": 20.22,
+      "pollutant_history": 14.06
+    },
+    "top10": {
+      "dew_point_2m_f_h72": 5.6113,
+      "doy_sin_f_h72": 4.9758,
+      "us_aqi_t": 4.7416,
+      "doy_cos_f_h72": 4.7226,
+      "temp_rmean48_f_h72": 3.6702,
+      "wind_rmean48_f_h72": 3.2417,
+      "hour_sin_f_h72": 3.1586,
+      "us_aqi_rmean168_t": 3.1344,
+      "temp_rmean24_f_h72": 2.9536,
+      "sulphur_dioxide_r24h_t": 2.3075
+    }
+  }
+]

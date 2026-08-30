@@ -1,0 +1,5 @@
+baseline,MAE,RMSE
+persistence t+24h,12.53,17.13
+persistence t+48h,16.43,22.16
+persistence t+72h,18.48,24.6
+climatology (doy x hour),21.07,27.39
