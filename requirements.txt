@@ -20,6 +20,6 @@ shap>=0.44
 # Dashboard
 streamlit>=1.30
 plotly>=5.18
-
+dotenv
 # Deep-learning comparison arm (not needed by CI - install locally)
 # torch>=2.2
