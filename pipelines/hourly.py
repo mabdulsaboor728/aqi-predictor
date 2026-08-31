@@ -23,9 +23,18 @@ Rolling features need history: origin windows reach back 168h and weather
 windows 72h. We therefore rebuild features over a REBUILD_DAYS tail rather than
 just the newest hour, then let the upsert push only what changed.
 
+Failure policy
+--------------
+The feature store PUSH is non-fatal. It is idempotent and re-sends a 72h window
+every run, so a transient failure self-heals on the next hour - blocking the
+forecast for it would turn a recoverable blip into a visible outage. The READ
+is fatal, because without history there is nothing to build; it retries inside
+src.data.feature_store instead.
+
 Run:
     python -m pipelines.hourly
     python -m pipelines.hourly --skip-predict
+    python -m pipelines.hourly --skip-push
 """
 
 from __future__ import annotations
@@ -97,6 +106,8 @@ def main() -> int:
     fs = get_fs()
 
     # ---------------------------------------------------------- 1. assemble
+    # fatal if this fails: without history there is nothing to build. Retries
+    # for transient Query Service errors live in src.data.feature_store.
     stored = read_raw(fs)
     print(f"feature store: {len(stored)} rows through {stored.index.max()}")
     combined = merge_history(stored, fetch_recent())
@@ -118,8 +129,17 @@ def main() -> int:
         print(f"  h={h}: {len(data)} tail rows -> {out.name}")
 
     # ---------------------------------------------------------- 4. push
+    push_failed = False
     if not args.skip_push:
-        do_incremental(fs)
+        try:
+            do_incremental(fs)
+        except Exception as exc:                               # noqa: BLE001
+            # Non-fatal by design. The push is idempotent and re-sends a 72h
+            # window each run, so this self-heals next hour. Failing here would
+            # also skip the forecast, turning a blip into a visible outage.
+            push_failed = True
+            print(f"WARNING: feature store push failed ({type(exc).__name__}): {exc}")
+            print("         continuing to forecast; the next run re-sends this window")
 
     # ---------------------------------------------------------- 5. forecast
     if not args.skip_predict:
@@ -127,7 +147,10 @@ def main() -> int:
 
         render(predict())
 
-    print("\nhourly pipeline complete")
+    if push_failed:
+        print("\nhourly pipeline complete (with a non-fatal push failure)")
+    else:
+        print("\nhourly pipeline complete")
     return 0
 
 

@@ -19,10 +19,18 @@ time, which powers point-in-time joins. With Delta time travel, inserting a row
 whose `unix_ts` already exists UPSERTS it, so re-running the hourly job over
 overlapping hours is safe and idempotent.
 
-Writes are chunked with retry. Long single-session uploads to serverless
-Hopsworks drop intermittently - the failure lands on the metadata commit after
-several minutes of transfer, not on the data itself. Short sessions avoid it,
-and upsert makes every retry harmless. This matters more in CI than locally.
+Reliability
+-----------
+Both directions are retried, for different reasons:
+
+  writes  delta-rs opens a direct HDFS RPC connection, which drops
+          intermittently from outside the Hopsworks network. Chunking keeps
+          each session short; upsert makes every retry idempotent.
+  reads   the Arrow Flight Query Service returns transient gRPC UNAVAILABLE
+          ("Socket closed") under load. Reads are pure, so retrying is free.
+
+Neither retry hides a real error: schema mismatches and duplicate keys still
+fail immediately and loudly.
 
 Setup
 -----
@@ -62,6 +70,10 @@ TIME_TRAVEL_FORMAT = os.environ.get("HOPSWORKS_TT_FORMAT", "DELTA")
 CHUNK_ROWS = 8000
 MAX_RETRIES = 4
 RETRY_BASE_S = 5
+
+# read tuning
+READ_RETRIES = 3
+READ_BACKOFF_S = 20
 
 # how many recent hours the incremental job re-sends. Overlap absorbs late
 # CAMS corrections; upsert makes the duplication harmless.
@@ -149,7 +161,7 @@ def _fg(fs, name: str, description: str):
 
 
 # --------------------------------------------------------------------------- #
-# chunked writes
+# writes
 # --------------------------------------------------------------------------- #
 def _insert_chunked(fg, frame: pd.DataFrame, label: str) -> None:
     """Write in chunks, retrying each with exponential backoff.
@@ -201,6 +213,26 @@ def write_features(fs, h: int, df: pd.DataFrame) -> None:
 # --------------------------------------------------------------------------- #
 # reads
 # --------------------------------------------------------------------------- #
+def _read_with_retry(fg, label: str) -> pd.DataFrame:
+    """Read a feature group, retrying transient Query Service failures.
+
+    The Arrow Flight service intermittently returns gRPC UNAVAILABLE
+    ("Socket closed") when it is under load - a server-side condition, not a
+    client bug. Reads are pure, so retrying is always safe.
+    """
+    for attempt in range(READ_RETRIES):
+        try:
+            return fg.read()
+        except Exception as exc:                              # noqa: BLE001
+            if attempt == READ_RETRIES - 1:
+                raise
+            wait = READ_BACKOFF_S * (attempt + 1)
+            print(f"  {label}: read failed ({type(exc).__name__}), "
+                  f"retry in {wait}s [{attempt + 1}/{READ_RETRIES}]")
+            _time.sleep(wait)
+    raise RuntimeError(f"{label}: unreachable")               # pragma: no cover
+
+
 def _restore_index(df: pd.DataFrame) -> pd.DataFrame:
     """Offline reads come back unordered - always re-sort.
 
@@ -214,11 +246,12 @@ def _restore_index(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def read_raw(fs) -> pd.DataFrame:
-    return _restore_index(_fg(fs, RAW_FG, "").read())
+    return _restore_index(_read_with_retry(_fg(fs, RAW_FG, ""), RAW_FG))
 
 
 def read_features(fs, h: int) -> pd.DataFrame:
-    return _restore_index(_fg(fs, FEAT_FG.format(h=h), "").read())
+    name = FEAT_FG.format(h=h)
+    return _restore_index(_read_with_retry(_fg(fs, name, ""), name))
 
 
 def latest_timestamp(fs, name: str):
