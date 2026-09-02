@@ -6,11 +6,15 @@ name: daily-retrain
 # (both heads), and registers the results. No "only if better" gate: inference
 # selects the best registered version by metric, so a worse retrain is recorded
 # but never served. The comparison is printed in the log either way.
+#
+# Model registration retries internally - the Hopsworks metadata cluster
+# intermittently returns HTTP 500 mid-upload, which previously left the
+# registry half-populated.
 
 on:
   schedule:
-    # 02:40 UTC = 07:40 PKT. After the hourly job has landed the overnight
-    # data, and off the top of the hour where GitHub's scheduler is busiest.
+    # 02:40 UTC = 07:40 PKT. After the overnight hourly runs have landed data,
+    # and off the top of the hour where GitHub's scheduler is busiest.
     - cron: "40 2 * * *"
   workflow_dispatch:
 
@@ -48,12 +52,34 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add reports/holdout_summary.csv reports/model_comparison.csv \
                   reports/last_train.json
-          git diff --staged --quiet || git commit -m "retrain $(date -u +'%Y-%m-%d')"
-          git push
+          if git diff --staged --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "retrain $(date -u +'%Y-%m-%d')"
+
+          # This job can run for the best part of an hour, during which the
+          # hourly workflow pushes forecast commits to main. A plain push is
+          # then rejected as non-fast-forward - which failed the job even
+          # though the training and registration had already succeeded. Both
+          # workflows only touch generated files under reports/, so rebasing
+          # can never conflict semantically.
+          for i in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin main; then
+              echo "pushed on attempt $i"
+              exit 0
+            fi
+            echo "push attempt $i failed, retrying in 10s"
+            sleep 10
+          done
+          echo "could not push after 5 attempts"
+          exit 1
 
       - name: Upload model artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: models-${{ github.run_id }}

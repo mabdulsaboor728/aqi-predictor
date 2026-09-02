@@ -1,29 +1,50 @@
 """
-Step 5 (v2) - Training pipeline.
+Step 5 - Training pipeline.
 
-Changes from v1, each driven by a measured result rather than a guess:
+Trains and compares several models per horizon using PURGED walk-forward
+cross-validation, then refits the winner on all development data and scores it
+once on a rolling holdout.
 
-1. MIN_TRAIN_HOURS floor on the walk-forward CV.
-   v1's first fold trained on ~6 months, so no model could use seasonal
-   features and boosted models were penalised hardest. Fixing this reversed
-   the model ranking: gradient boosting now wins at every horizon, and Ridge's
-   apparent win at h=24 turned out to be a protocol artifact.
+Evaluation protocol
+-------------------
+  holdout   : the final HOLDOUT_DAYS of available data, scored once
+  CV        : expanding-window walk-forward over everything before the holdout,
+              with a minimum training size and a purge gap
+  baseline  : persistence, reported alongside every model so the comparison is
+              always against the bar rather than against zero
 
-2. Shallower, more regularised boosting.
-   31 leaf nodes overfit. 7-15 leaves with stronger L2 scored better at every
-   horizon.
+Why the holdout window ROLLS
+----------------------------
+An earlier version used a fixed start date with no end. That silently froze the
+training set: new data only ever enlarged the holdout, so every "daily retrain"
+refit the identical rows and could not adapt to drift. A window of constant
+LENGTH anchored to the end of the data keeps the training set growing while
+holding the evaluation window approximately comparable across versions -
+consecutive retrains differ by a day of holdout, not by months.
 
-3. XGBoost added to the zoo.
+Over long periods the windows do still diverge, so a "best ever registered
+version" comparison is only approximately valid. Each model records its exact
+holdout window in metadata so the comparison can be audited. A fully rigorous
+scheme would rescore every candidate on one frozen benchmark before selection;
+that is noted as future work rather than implemented here.
 
-4. A separate QUANTILE model for the alert path.
-   The RMSE-optimal point forecast recalls only 27% of AQI>150 hours at h=72.
-   Squared error rewards hedging toward the mean, which is the wrong behaviour
-   for a warning system. We therefore train and ship two heads per horizon:
-       point head -> the number shown on the dashboard
-       alert head -> a high quantile, used only for the threshold warning
-   These are different objectives; one model cannot serve both.
+Two heads per horizon
+---------------------
+  point head -> the number shown on the dashboard, RMSE-optimal
+  alert head -> a high quantile, used only for the threshold warning
 
-5. Alert recall/precision reported alongside RMSE/MAE/R2.
+The RMSE-optimal forecast recalls only about half of AQI>150 hours at h=72:
+squared error rewards hedging toward the mean, which is the wrong behaviour for
+a warning system. These are different objectives and one model cannot serve
+both.
+
+Purging
+-------
+A training row at time T carries a target at T + horizon. If validation begins
+at T + 1, that target lies inside the validation window and the model has
+effectively seen the answer. Standard TimeSeriesSplit does not handle this, so
+a gap of (horizon + 24) hours separates every train fold from its validation
+fold, and the same gap separates the development set from the holdout.
 
 Run:
     python -m src.models.train
@@ -53,7 +74,8 @@ try:
 except ImportError:
     HAS_XGB = False
 
-HOLDOUT_START = "2025-09-01"
+# rolling holdout: always the final HOLDOUT_DAYS of available data
+HOLDOUT_DAYS = 365
 MIN_TRAIN_HOURS = 24 * 365 * 2      # two full seasonal cycles before fold 1
 N_SPLITS = 4
 SEED = 42
@@ -108,14 +130,17 @@ def purged_folds(n: int, horizon: int, n_splits: int = N_SPLITS,
                  min_train: int = MIN_TRAIN_HOURS, gap_extra: int = 24):
     """Expanding window with a purge gap AND a minimum training size.
 
-    The purge (horizon + gap_extra rows) removes training rows whose target
-    falls inside the validation window. The minimum training size stops early
-    folds from scoring models that have never seen a full seasonal cycle.
+    The minimum training size stops early folds from scoring models that have
+    never seen a full seasonal cycle - without it, boosted models were
+    penalised hardest and the model ranking came out wrong.
     """
     gap = horizon + gap_extra
     usable = n - min_train - gap
     if usable <= 0:
-        raise ValueError("not enough data for the requested min_train")
+        raise ValueError(
+            f"not enough development data for min_train={min_train}h "
+            f"(have {n} rows). Reduce MIN_TRAIN_HOURS or HOLDOUT_DAYS."
+        )
     size = usable // n_splits
     out = []
     for i in range(n_splits):
@@ -164,11 +189,26 @@ def load_horizon(h: int):
 # --------------------------------------------------------------------------- #
 def run_horizon(h: int):
     X, y = load_horizon(h)
-    dev = X.index < HOLDOUT_START
-    Xd, yd, Xh, yh = X[dev], y[dev], X[~dev], y[~dev]
+
+    # Rolling split. The purge on the dev side matters as much as it does
+    # between CV folds: a dev row at t carries its target at t+h, which must
+    # not fall inside the holdout.
+    data_end = X.index.max()
+    holdout_start = data_end - pd.Timedelta(days=HOLDOUT_DAYS)
+    dev_mask = X.index < (holdout_start - pd.Timedelta(hours=h + 24))
+    hold_mask = X.index >= holdout_start
+
+    Xd, yd = X[dev_mask], y[dev_mask]
+    Xh, yh = X[hold_mask], y[hold_mask]
+
+    if len(Xh) == 0:
+        raise ValueError(f"h={h}: holdout is empty - is HOLDOUT_DAYS longer than the data?")
+
     folds = purged_folds(len(Xd), h)
 
     print(f"\n{'=' * 70}\nhorizon {h}h   dev={len(Xd)}  holdout={len(Xh)}")
+    print(f"holdout window: {holdout_start:%Y-%m-%d} -> {data_end:%Y-%m-%d} "
+          f"({HOLDOUT_DAYS}d rolling)")
     print(f"{len(folds)} folds | min train {MIN_TRAIN_HOURS}h | purge {h + 24}h")
 
     persist = [score(yd.iloc[v], Xd["us_aqi_t"].iloc[v]) for _, v in folds]
@@ -209,16 +249,33 @@ def run_horizon(h: int):
     joblib.dump(point, cfg.MODELS_DIR / f"model_h{h}.joblib")
     joblib.dump(alert, cfg.MODELS_DIR / f"alert_h{h}.joblib")
 
+    import sys as _sys
     meta = {
         "horizon": h, "point_model": best_name,
         "alert_model": f"hist_gbm_quantile_{ALERT_QUANTILE}",
         "alert_threshold": ALERT_THRESHOLD,
-        "trained_at": pd.Timestamp.utcnow().isoformat(),
+        "trained_at": pd.Timestamp.now(tz="UTC").isoformat(),
         "n_train": int(len(Xd)), "n_features": int(X.shape[1]),
         "cv": {"min_train_hours": MIN_TRAIN_HOURS, "n_folds": len(folds),
                "purge_hours": h + 24},
+        # the exact rows this version was scored on, so a cross-version
+        # registry comparison can be audited rather than assumed valid
+        "holdout_window": {
+            "start": holdout_start.isoformat(),
+            "end": data_end.isoformat(),
+            "days": HOLDOUT_DAYS,
+            "n_rows": int(len(Xh)),
+        },
         "holdout": hold, "holdout_persistence": base,
         "alert_point_head": a_point, "alert_quantile_head": a_alert,
+        # pickles are tied to the versions that wrote them; recording the
+        # environment makes a load failure diagnosable instead of mysterious
+        "env": {
+            "python": ".".join(map(str, _sys.version_info[:3])),
+            "sklearn": __import__("sklearn").__version__,
+            "numpy": np.__version__,
+            "xgboost": __import__("xgboost").__version__ if HAS_XGB else None,
+        },
         "features": list(X.columns),
     }
     (cfg.MODELS_DIR / f"model_h{h}_meta.json").write_text(json.dumps(meta, indent=2))
@@ -249,6 +306,8 @@ def main() -> None:
         "recall_point": round(m["alert_point_head"]["recall"], 2),
         "recall_q90": round(m["alert_quantile_head"]["recall"], 2),
         "prec_q90": round(m["alert_quantile_head"]["precision"], 2),
+        "n_train": m["n_train"],
+        "holdout_start": m["holdout_window"]["start"][:10],
     } for m in metas])
 
     print(f"\n{'=' * 70}\nholdout summary")

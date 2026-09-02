@@ -16,8 +16,18 @@ Availability contract - this is the whole point of the module:
                                  is possible at all.
 
 Rolling weather windows ending at t+h are legitimate: the window covers past
-actuals plus forecast hours, and both are available when the forecast is issued.
-Rolling POLLUTANT windows may never extend past t.
+actuals plus forecast hours, and both are available when the forecast is
+issued. Rolling POLLUTANT windows may never extend past t.
+
+Target maturity
+---------------
+build_supervised() takes max_target_time. The air-quality API is a CAMS
+FORECAST product and returns provisional values for future hours, so without a
+cap the pipeline would emit rows whose "target" is another model's forecast
+rather than an observation. Training or evaluating on those means learning to
+imitate CAMS instead of learning to predict air quality. Callers that build
+from live data must pass the current hour; a static backfill of historical data
+can leave it as None.
 
 Run:
     python -m src.features.build_features
@@ -38,7 +48,8 @@ POLLUTANTS = ["pm2_5", "pm10", "ozone", "nitrogen_dioxide",
 AQI_LAGS = [1, 2, 3, 6, 12, 24, 48, 72, 168]
 POLLUTANT_LAGS = [1, 24]
 
-# windows chosen to match the US AQI sub-index definitions (see EDA Q3)
+# windows chosen to match the US AQI sub-index definitions (see EDA Q3):
+# matching the averaging window lifted winter correlation from 0.57 to 0.97
 SUBINDEX_WINDOWS = {"pm2_5": 24, "pm10": 24, "ozone": 8,
                     "nitrogen_dioxide": 1, "sulphur_dioxide": 24,
                     "carbon_monoxide": 8}
@@ -147,8 +158,16 @@ def forecast_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build_supervised(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
-    """Assemble the (X, y) frame for one horizon, indexed by origin time t."""
+def build_supervised(df: pd.DataFrame, horizon: int,
+                     max_target_time: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Assemble the (X, y) frame for one horizon, indexed by origin time t.
+
+    max_target_time drops origins whose target hour t+h has not yet MATURED.
+    The air-quality API is a CAMS forecast product and returns provisional
+    values for future hours; a row built from those would train the model to
+    reproduce another model's forecast rather than an observation. Pass the
+    current hour when building from live data.
+    """
     origin = origin_features(df)
     fcst = forecast_features(df)
 
@@ -160,13 +179,26 @@ def build_supervised(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
 
     data = pd.concat([origin, fcst_at_target, y], axis=1)
     data["horizon"] = horizon
-    return data.dropna(subset=["target"])
+    data = data.dropna(subset=["target"])
+
+    if max_target_time is not None:
+        mature = (data.index + pd.Timedelta(hours=horizon)) <= max_target_time
+        dropped = int((~mature).sum())
+        if dropped:
+            print(f"  h={horizon}: dropped {dropped} rows with unmatured targets "
+                  f"(target after {max_target_time})")
+        data = data[mature]
+
+    return data
 
 
 # --------------------------------------------------------------------------- #
 def assert_no_leakage(df: pd.DataFrame, data: pd.DataFrame, horizon: int) -> None:
     """Cheap but real checks. Run them every time; they cost milliseconds."""
     t = cfg.TARGET
+    if data.empty:
+        print(f"  h={horizon}: no rows to check")
+        return
 
     # 1. the target on row t must be the raw series at t+h
     probe = data.index[len(data) // 2]
@@ -174,15 +206,15 @@ def assert_no_leakage(df: pd.DataFrame, data: pd.DataFrame, horizon: int) -> Non
     actual = data.loc[probe, "target"]
     assert np.isclose(expected, actual), f"target misaligned at {probe}"
 
-    # 2. no origin feature may equal the target (that would mean a forward peek)
+    # 2. no origin feature may equal the target (that would be a forward peek)
     origin_cols = [c for c in data.columns if c.endswith("_t")]
     aligned = data[origin_cols].join(data["target"])
     for c in origin_cols:
         r = aligned[c].corr(aligned["target"])
-        assert r < 0.999, f"{c} is perfectly correlated with target - leak"
+        assert not (r > 0.999), f"{c} is perfectly correlated with target - leak"
 
-    # 3. current-AQI feature must correlate with the target no better than
-    #    the persistence baseline does, or something is shifted wrong
+    # 3. current-AQI feature must not correlate with the target better than the
+    #    raw autocorrelation at this lag, or something is shifted wrong
     persistence_r = data[f"{t}_t"].corr(data["target"])
     assert persistence_r < 0.99, "origin AQI too close to target - check shift sign"
 
@@ -193,6 +225,8 @@ def main() -> None:
     df = pd.read_parquet(cfg.DATA_INTERIM / "clean.parquet").set_index("time")
     print(f"clean: {df.shape}")
 
+    # A static backfill from the archive has already matured, so no cap is
+    # needed here. The hourly pipeline passes the current hour instead.
     for h in cfg.HORIZONS_H:
         data = build_supervised(df, h)
         assert_no_leakage(df, data, h)

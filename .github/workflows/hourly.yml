@@ -11,7 +11,7 @@ on:
     # 7 past the hour: Open-Meteo publishes on the hour, and GitHub's scheduler
     # is queued rather than exact, so a few minutes of slack avoids racing it.
     - cron: "7 * * * *"
-  workflow_dispatch:        # manual trigger, useful for the first run
+  workflow_dispatch:        # manual trigger
 
 # a slow run must never overlap the next hour's
 concurrency:
@@ -48,13 +48,33 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # append to a rolling history so the dashboard can show past accuracy
+
+          # keep a rolling history so the dashboard can show past accuracy
           mkdir -p reports/history
           cp reports/latest_forecast.json \
              "reports/history/forecast_$(date -u +%Y%m%dT%H).json"
+
           git add reports/latest_forecast.json reports/history/
-          git diff --staged --quiet || git commit -m "forecast $(date -u +'%Y-%m-%d %H:00 UTC')"
-          git push
+          if git diff --staged --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "forecast $(date -u +'%Y-%m-%d %H:00 UTC')"
+
+          # The daily-retrain workflow pushes to main while this job runs, so
+          # the remote has often moved by now and a plain push is rejected as
+          # non-fast-forward. Both workflows only touch generated files under
+          # reports/, so rebasing can never conflict semantically.
+          for i in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin main; then
+              echo "pushed on attempt $i"
+              exit 0
+            fi
+            echo "push attempt $i failed, retrying in 10s"
+            sleep 10
+          done
+          echo "could not push after 5 attempts"
+          exit 1
 
       - name: Upload logs on failure
         if: failure()

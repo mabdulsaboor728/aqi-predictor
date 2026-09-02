@@ -1,35 +1,41 @@
 """
 Hourly pipeline - the CI entrypoint run by .github/workflows/hourly.yml.
 
-    feature store history
-              +                -> clean -> features -> push tail -> forecast
-    last N days from the API
+    Open-Meteo (last FETCH_DAYS)  ->  clean  ->  features  ->  push  ->  forecast
 
-Why it is shaped this way
--------------------------
+Where history comes from, and why it changed
+--------------------------------------------
 A CI runner starts with an empty filesystem, so data/interim/clean.parquet does
-not exist. Two bad options and one good one:
+not exist and history has to come from somewhere each run.
 
-  * re-fetch four years from Open-Meteo every hour  - slow, and abusive of a
-    free API
-  * cache the parquet between runs                  - caches expire and go
-    stale silently
-  * treat the FEATURE STORE as the state            - read history from
-    Hopsworks, fetch only recent hours from the API, merge, rebuild
+This job originally read history from the Hopsworks feature store. That worked,
+but the read time grew steadily - 2.6s at first, 56s after a few days, 136s
+after a week - because the offline store accumulates one Delta commit per
+insert and every read merges them all. Three consecutive hourly runs eventually
+failed when the read outran the Query Service's own timeout.
 
-The third is what a feature store is for, so that is what this does.
+Open-Meteo is the actual source of truth, this job already calls it, and it
+serves 60 days as quickly as 10. So history now comes from the API and the
+feature store is a WRITE SINK on this path. That removes a growing, timeout-
+prone dependency from a job that runs 24 times a day. The daily training job
+still reads the store, where a slow read once a day is fine.
 
-Rolling features need history: origin windows reach back 168h and weather
-windows 72h. We therefore rebuild features over a REBUILD_DAYS tail rather than
-just the newest hour, then let the upsert push only what changed.
+FETCH_DAYS must comfortably exceed the longest origin window (168h) plus
+REBUILD_DAYS, so the first rebuilt row has full history behind it.
+
+Target maturity
+---------------
+The air-quality API is a CAMS FORECAST product: for the current day it returns
+provisional values for hours that have not happened yet. Those must never
+become training labels, or the model learns to imitate CAMS rather than to
+predict air quality. build_supervised() is given the current hour as a cap so
+only matured targets are written.
 
 Failure policy
 --------------
-The feature store PUSH is non-fatal. It is idempotent and re-sends a 72h window
-every run, so a transient failure self-heals on the next hour - blocking the
-forecast for it would turn a recoverable blip into a visible outage. The READ
-is fatal, because without history there is nothing to build; it retries inside
-src.data.feature_store instead.
+The feature store PUSH is non-fatal. It is idempotent and re-sends a lookback
+window every run, so a transient failure self-heals on the next hour - blocking
+the forecast for it would turn a recoverable blip into a visible outage.
 
 Run:
     python -m pipelines.hourly
@@ -47,54 +53,30 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src import config as cfg
-from src.data import clean as C
-from src.data.feature_store import do_incremental, get_fs, read_raw
+from src.data.clean import clean_frame
+from src.data.feature_store import do_incremental, get_fs
 from src.data.fetch_openmeteo import fetch_air_quality, fetch_weather
 from src.features.build_features import assert_no_leakage, build_supervised
 
-# how far back to re-fetch from the API each run. Generous on purpose: CAMS
-# revises recently published hours, and upsert makes overlap free.
-FETCH_DAYS = 10
+# History fetched from Open-Meteo each run. Must exceed REBUILD_DAYS plus the
+# longest origin window (168h = 7d) with margin.
+FETCH_DAYS = 60
 
-# how much tail to rebuild features over. Must comfortably exceed the longest
-# origin window (168h) so the first rebuilt row has full history.
+# how much tail to rebuild features over
 REBUILD_DAYS = 30
 
-CALENDAR_COLS = ["hour_local", "dayofweek", "month", "dayofyear"]
+MIN_HISTORY_HOURS = 24 * 14      # refuse to build features on a short series
 
 
 def fetch_recent() -> pd.DataFrame:
+    """Pull the recent window from both Open-Meteo endpoints and merge."""
     end = date.today()
     start = (end - timedelta(days=FETCH_DAYS)).isoformat()
-    print(f"fetching {start} -> {end} from Open-Meteo")
+    print(f"fetching {start} -> {end} from Open-Meteo ({FETCH_DAYS}d)")
     aq = fetch_air_quality(start, end.isoformat())
     wx = fetch_weather(start, end.isoformat())
     df = aq.merge(wx, on="time", how="inner", validate="one_to_one")
     return df.drop(columns=["boundary_layer_height"], errors="ignore")
-
-
-def merge_history(stored: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:
-    """Combine stored history with freshly fetched hours; fresh wins on overlap."""
-    stored = stored.drop(columns=CALENDAR_COLS, errors="ignore").reset_index()
-    stored["time"] = pd.to_datetime(stored["time"], utc=True)
-    fresh["time"] = pd.to_datetime(fresh["time"], utc=True)
-
-    cols = [c for c in stored.columns if c in fresh.columns]
-    combined = pd.concat([stored[cols], fresh[cols]], ignore_index=True)
-    combined = (combined.sort_values("time")
-                        .drop_duplicates(subset="time", keep="last")
-                        .reset_index(drop=True))
-    print(f"merged: {len(stored)} stored + {len(fresh)} fresh -> {len(combined)} rows")
-    return combined
-
-
-def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Same cleaning steps as src.data.clean, applied to an in-memory frame."""
-    df = C.trim_leading_gap(df)
-    df = C.enforce_hourly_grid(df)
-    df = C.clip_physical(df)
-    df = C.fill_short_gaps(df)
-    return C.add_calendar(df)
 
 
 def main() -> int:
@@ -103,25 +85,35 @@ def main() -> int:
     ap.add_argument("--skip-push", action="store_true")
     args = ap.parse_args()
 
-    fs = get_fs()
+    # ---------------------------------------------------------- 1. fetch
+    combined = fetch_recent()
+    print(f"fetched {len(combined)} hours "
+          f"({combined['time'].min()} -> {combined['time'].max()})")
 
-    # ---------------------------------------------------------- 1. assemble
-    # fatal if this fails: without history there is nothing to build. Retries
-    # for transient Query Service errors live in src.data.feature_store.
-    stored = read_raw(fs)
-    print(f"feature store: {len(stored)} rows through {stored.index.max()}")
-    combined = merge_history(stored, fetch_recent())
+    if len(combined) < MIN_HISTORY_HOURS:
+        # Fail loudly: too little history silently produces NaN rolling
+        # features, which the serving null check would then reject anyway.
+        raise RuntimeError(
+            f"only {len(combined)} hours fetched, need at least "
+            f"{MIN_HISTORY_HOURS} for the 168h origin windows"
+        )
 
     # ---------------------------------------------------------- 2. clean
+    # clean_frame is imported from src.data.clean rather than reimplemented -
+    # two copies of the cleaning sequence would drift apart and become
+    # training/serving skew.
     cleaned = clean_frame(combined)
     cfg.DATA_INTERIM.mkdir(parents=True, exist_ok=True)
     cleaned.reset_index().to_parquet(cfg.DATA_INTERIM / "clean.parquet", index=False)
     print(f"clean: {cleaned.shape}, through {cleaned.index.max()}")
 
     # ---------------------------------------------------------- 3. features
+    now = pd.Timestamp.now(tz="UTC").floor("h")
     tail_start = cleaned.index.max() - pd.Timedelta(days=REBUILD_DAYS)
+    print(f"building features (targets matured as of {now})")
+
     for h in cfg.HORIZONS_H:
-        data = build_supervised(cleaned, h)
+        data = build_supervised(cleaned, h, max_target_time=now)
         assert_no_leakage(cleaned, data, h)
         data = data[data.index >= tail_start]
         out = cfg.DATA_PROCESSED / f"dataset_h{h}.parquet"
@@ -132,11 +124,9 @@ def main() -> int:
     push_failed = False
     if not args.skip_push:
         try:
-            do_incremental(fs)
+            do_incremental(get_fs())
         except Exception as exc:                               # noqa: BLE001
-            # Non-fatal by design. The push is idempotent and re-sends a 72h
-            # window each run, so this self-heals next hour. Failing here would
-            # also skip the forecast, turning a blip into a visible outage.
+            # Non-fatal by design - see the module docstring.
             push_failed = True
             print(f"WARNING: feature store push failed ({type(exc).__name__}): {exc}")
             print("         continuing to forecast; the next run re-sends this window")
@@ -147,10 +137,8 @@ def main() -> int:
 
         render(predict())
 
-    if push_failed:
-        print("\nhourly pipeline complete (with a non-fatal push failure)")
-    else:
-        print("\nhourly pipeline complete")
+    suffix = " (with a non-fatal push failure)" if push_failed else ""
+    print(f"\nhourly pipeline complete{suffix}")
     return 0
 
 

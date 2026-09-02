@@ -3,16 +3,22 @@ Step 2 - Cleaning.
 
 Takes data/raw/merged_raw.parquet and produces data/interim/clean.parquet.
 
-Deliberately conservative: this stage only removes/repairs things that are
+Deliberately conservative: this stage only removes or repairs what is
 defensible. No feature engineering happens here (that is step 4), and nothing
 here is allowed to look forward in time.
 
 Decisions made, and why:
   * boundary_layer_height dropped  - 51% missing (archive only covers Sep 2024+)
-  * leading 96h trimmed            - single contiguous us_aqi gap at series start
-  * short gaps interpolated        - time-based, capped at 3h, both directions
-                                     disabled so we never fill from the future
+                                     and its correlation with the target was
+                                     0.003, so keeping it would have cost half
+                                     the training data for nothing
+  * leading rows trimmed           - one contiguous us_aqi gap at series start
+  * short gaps forward-filled      - strictly past-only, capped at MAX_GAP_HOURS
   * physical clipping              - negatives on strictly-positive quantities
+
+The functions here are pure and take a frame, so pipelines/hourly.py can reuse
+the identical cleaning steps on an in-memory frame in CI. Any divergence
+between the two paths would be training/serving skew.
 
 Run:
     python -m src.data.clean
@@ -25,7 +31,7 @@ import pandas as pd
 from src import config as cfg
 
 DROP_COLS = ["boundary_layer_height"]      # 51% missing - see module docstring
-MAX_GAP_HOURS = 3                          # anything longer gets flagged, not filled
+MAX_GAP_HOURS = 3                          # anything longer is left as NaN
 
 # columns that cannot physically be negative
 NON_NEGATIVE = [
@@ -67,6 +73,11 @@ def enforce_hourly_grid(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clip_physical(df: pd.DataFrame) -> pd.DataFrame:
+    """Clip values that cannot physically occur.
+
+    CAMS produces small negative concentrations near zero as a numerical
+    artefact, so this is correcting the model output rather than the physics.
+    """
     cols = [c for c in NON_NEGATIVE if c in df.columns]
     n_neg = int((df[cols] < 0).sum().sum())
     if n_neg:
@@ -81,18 +92,34 @@ def clip_physical(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def fill_short_gaps(df: pd.DataFrame) -> pd.DataFrame:
-    """Interpolate gaps of <= MAX_GAP_HOURS only.
+    """Forward-fill gaps of at most MAX_GAP_HOURS. Strictly past-only.
 
-    limit_direction='forward' keeps this causal: a value is only ever filled
-    from the past, never from a future observation the model would not have.
+    This is NOT interpolation, deliberately.
+
+    pandas' interpolate(method="time") always reads the observations on BOTH
+    sides of a gap. `limit_direction` only chooses which NaN positions get
+    written - it does not stop the future endpoint from participating in the
+    arithmetic. So interpolate(limit_direction="forward") on [0, NaN, 2]
+    returns [0, 1, 2]: the middle value was computed from the one after it.
+
+    That is a leak. A 3pm gap filled from the 5pm reading puts a future
+    observation into every lag and rolling feature computed at 3pm, and no
+    downstream check would catch it - the value looks perfectly plausible.
+
+    ffill carries the last known value forward and reads nothing after t. The
+    result is a step rather than a smooth ramp, which is less accurate for a
+    continuous series. That is the correct trade: an accurate value built from
+    the future is worse than a slightly stale value built only from the past,
+    because only the second one is available at serving time.
+
+    Gaps longer than MAX_GAP_HOURS are left as NaN for the feature stage to
+    handle, rather than propagating a stale value indefinitely.
     """
-    before = df.isna().sum().sum()
+    before = int(df.isna().sum().sum())
     numeric = df.select_dtypes("number").columns
-    df[numeric] = df[numeric].interpolate(
-        method="time", limit=MAX_GAP_HOURS, limit_direction="forward"
-    )
-    after = df.isna().sum().sum()
-    print(f"interpolated {before - after} values (gaps <= {MAX_GAP_HOURS}h)")
+    df[numeric] = df[numeric].ffill(limit=MAX_GAP_HOURS)
+    after = int(df.isna().sum().sum())
+    print(f"forward-filled {before - after} values (gaps <= {MAX_GAP_HOURS}h)")
 
     remaining = df[numeric].isna().sum()
     remaining = remaining[remaining > 0]
@@ -112,25 +139,34 @@ def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """The full cleaning sequence, applied to an in-memory frame.
+
+    Exposed so pipelines/hourly.py runs the identical steps in CI instead of
+    reimplementing them.
+    """
+    df = trim_leading_gap(df)
+    df = enforce_hourly_grid(df)
+    df = clip_physical(df)
+    df = fill_short_gaps(df)
+    return add_calendar(df)
+
+
 def main() -> None:
     df = load_raw()
     print(f"raw: {df.shape}")
 
-    df = trim_leading_gap(df)
     df = df.drop(columns=[c for c in DROP_COLS if c in df.columns])
     print(f"dropped columns: {DROP_COLS}")
 
-    df = enforce_hourly_grid(df)
-    df = clip_physical(df)
-    df = fill_short_gaps(df)
-    df = add_calendar(df)
+    df = clean_frame(df)
 
     out = cfg.DATA_INTERIM / "clean.parquet"
     df.reset_index().to_parquet(out, index=False)
 
     print(f"\nclean: {df.shape}")
     print(f"range: {df.index.min()} -> {df.index.max()}")
-    print(f"target nulls remaining: {df[cfg.TARGET].isna().sum()}")
+    print(f"target nulls remaining: {int(df[cfg.TARGET].isna().sum())}")
     print(f"saved -> {out}")
 
 

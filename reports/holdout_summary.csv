@@ -1,4 +1,11 @@
+<<<<<<< HEAD
 horizon,point_model,RMSE,MAE,R2,persist_RMSE,gain_%,recall_point,recall_q90,prec_q90
 24,hist_gbm,13.41,10.06,0.81,16.23,17.3,0.72,0.95,0.63
 48,xgboost,17.35,13.49,0.682,21.4,18.9,0.56,0.95,0.59
 72,xgboost,18.7,14.6,0.63,24.45,23.5,0.51,0.93,0.6
+=======
+horizon,point_model,RMSE,MAE,R2,persist_RMSE,gain_%,recall_point,recall_q90,prec_q90,n_train,holdout_start
+24,hist_gbm,13.56,10.2,0.807,16.32,16.9,0.72,0.94,0.63,26831,2025-08-28
+48,xgboost,17.49,13.55,0.679,21.66,19.2,0.6,0.94,0.58,26783,2025-08-27
+72,xgboost,19.01,14.86,0.62,24.51,22.4,0.48,0.92,0.6,26735,2025-08-26
+>>>>>>> 55bf8a5 (Improvements)

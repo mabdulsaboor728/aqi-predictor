@@ -102,20 +102,31 @@ def band(aqi: float) -> tuple[str, str]:
 # live data
 # --------------------------------------------------------------------------- #
 def fetch_recent_history() -> pd.DataFrame:
-    """Recent pollutant + weather actuals. Feature store first, API as fallback."""
-    try:
-        from src.data.feature_store import get_fs, read_raw
+    """Recent pollutant + weather actuals.
 
-        df = read_raw(get_fs())
-        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=HISTORY_HOURS)
-        df = df[df.index >= cutoff]
-        if len(df) >= HISTORY_HOURS * 0.8:
-            print(f"  history: {len(df)} rows from feature store "
-                  f"({df.index.min()} -> {df.index.max()})")
-            return df
-        print(f"  history: feature store had only {len(df)} rows, falling back to API")
-    except Exception as exc:                                  # noqa: BLE001
-        print(f"  history: feature store unavailable ({type(exc).__name__}), using API")
+    Prefers the local clean.parquet that pipelines/hourly.py has just written,
+    then falls back to the API.
+
+    This deliberately does NOT read the feature store. That read grew from 2.6s
+    to 136s over a week as Delta commits accumulated, and it sits on a path
+    that runs 24 times a day. The store is a write sink on the hourly path;
+    Open-Meteo is the source of truth and is already being called anyway.
+    """
+    local = cfg.DATA_INTERIM / "clean.parquet"
+    if local.exists():
+        try:
+            df = pd.read_parquet(local).set_index("time")
+            df.index = pd.to_datetime(df.index, utc=True)
+            cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=HISTORY_HOURS)
+            df = df[df.index >= cutoff]
+            if len(df) >= HISTORY_HOURS * 0.8:
+                print(f"  history: {len(df)} rows from {local.name} "
+                      f"({df.index.min()} -> {df.index.max()})")
+                return df
+            print(f"  history: {local.name} had only {len(df)} recent rows, using API")
+        except Exception as exc:                              # noqa: BLE001
+            print(f"  history: could not read {local.name} "
+                  f"({type(exc).__name__}), using API")
 
     from src.data.fetch_openmeteo import fetch_air_quality, fetch_weather
 
@@ -124,7 +135,15 @@ def fetch_recent_history() -> pd.DataFrame:
     aq = fetch_air_quality(start, end.isoformat())
     wx = fetch_weather(start, end.isoformat())
     df = aq.merge(wx, on="time", how="inner").set_index("time").sort_index()
-    return df.drop(columns=["boundary_layer_height"], errors="ignore")
+    df = df.drop(columns=["boundary_layer_height"], errors="ignore")
+
+    # The API path skips cleaning, so apply the same steps the training data
+    # went through - otherwise the fallback silently serves uncleaned inputs.
+    from src.data.clean import clean_frame
+
+    df = clean_frame(df.reset_index())
+    print(f"  history: {len(df)} rows from API (cleaned)")
+    return df
 
 
 def fetch_weather_forecast() -> pd.DataFrame:
