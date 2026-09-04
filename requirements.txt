@@ -1,25 +1,11 @@
-# Core
-pandas>=2.0,<3.0
-pyarrow>=14.0
-requests>=2.31
-
-# Modelling
-
-
-scikit-learn==1.7.2
-xgboost==3.2.0
-numpy==2.2.6
-joblib==1.5.3
-# Feature store / registry
-hopsworks[python]
-
-# Analysis and reporting
-matplotlib>=3.7
-shap>=0.44
-
-# Dashboard
+# Dashboard runtime only.
+#
+# Streamlit Community Cloud auto-detects this file and has no setting to point
+# at another one, so it has to hold the slim list. The full development and CI
+# dependencies are in requirements-dev.txt - hopsworks pulls in
+# confluent-kafka, which needs a C library that is not present on the Streamlit
+# runner, and the build fails there.
 streamlit>=1.30
 plotly>=5.18
-dotenv
-# Deep-learning comparison arm (not needed by CI - install locally)
-# torch>=2.2
+pandas>=2.0,<3.0
+requests>=2.31

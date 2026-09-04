@@ -1,8 +1,0 @@
-# Dashboard only. The full requirements.txt includes hopsworks, xgboost, shap
-# and torch, which the dashboard never imports - and hopsworks pulls in
-# confluent-kafka, which needs a C library that is not present on Streamlit
-# Community Cloud.
-streamlit>=1.30
-plotly>=5.18
-pandas>=2.0,<3.0
-requests>=2.31

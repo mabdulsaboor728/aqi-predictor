@@ -1,0 +1,26 @@
+-r requirements.txt
+# Core
+pandas>=2.0,<3.0
+pyarrow>=14.0
+requests>=2.31
+
+# Modelling
+
+
+scikit-learn==1.7.2
+xgboost==3.2.0
+numpy==2.2.6
+joblib==1.5.3
+# Feature store / registry
+hopsworks[python]
+
+# Analysis and reporting
+matplotlib>=3.7
+shap>=0.44
+
+# Dashboard
+streamlit>=1.30
+plotly>=5.18
+dotenv
+# Deep-learning comparison arm (not needed by CI - install locally)
+# torch>=2.2
