@@ -61,10 +61,18 @@ jobs:
           fi
           git commit -m "retrain $(date -u +'%Y-%m-%d')"
 
+          # Training rewrites tracked artifacts this step does not stage -
+          # models/*.joblib and the metadata JSONs - which left the tree dirty
+          # and made every rebase attempt fail with "You have unstaged
+          # changes". Set them aside for the duration of the push. No need to
+          # restore: the models are already in the Hopsworks registry and
+          # uploaded as run artifacts, and the runner is discarded anyway.
+          git stash --include-untracked || true
+
           # This job can run for the best part of an hour, during which the
           # hourly workflow pushes forecast commits to main. A plain push is
           # then rejected as non-fast-forward - which failed the job even
-          # though the training and registration had already succeeded. Both
+          # though training and registration had already succeeded. Both
           # workflows only touch generated files under reports/, so rebasing
           # can never conflict semantically.
           for i in 1 2 3 4 5; do

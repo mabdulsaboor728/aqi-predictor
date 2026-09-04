@@ -3,8 +3,8 @@ name: hourly
 # Feature pipeline + live forecast, every hour.
 #
 # The runner filesystem is ephemeral, so this does NOT rely on cached data.
-# pipelines/hourly.py reads history from the Hopsworks feature store, fetches
-# only the last few days from Open-Meteo, rebuilds, and pushes the tail back.
+# pipelines/hourly.py fetches the last 60 days from Open-Meteo, rebuilds
+# features, pushes the tail to Hopsworks, and publishes a forecast.
 
 on:
   schedule:
@@ -60,6 +60,12 @@ jobs:
             exit 0
           fi
           git commit -m "forecast $(date -u +'%Y-%m-%d %H:00 UTC')"
+
+          # The pipeline also rewrites artifacts we deliberately do not commit
+          # (data/, models/). git pull --rebase refuses to run with a dirty
+          # tree, so set them aside for the duration of the push. No need to
+          # restore - the runner is discarded when the job ends.
+          git stash --include-untracked || true
 
           # The daily-retrain workflow pushes to main while this job runs, so
           # the remote has often moved by now and a plain push is rejected as
