@@ -531,9 +531,11 @@ the effect worsens with horizon. CV bias on hours above AQI 150:
 | +48h | −25.31 |
 | +72h | −27.60 |
 
-This is textbook squared-error behaviour: RMSE rewards hedging toward the mean.
-It is also precisely the wrong behaviour for a system whose stated purpose
-includes hazardous-level warnings.
+These figures are *conditional* on the target exceeding AQI 150. Overall bias
+across all holdout hours is near zero at every horizon — the model is not
+systematically low, it is systematically low **in the tail**. That distinction
+matters: an unconditional bias of −28 would be a calibration failure, whereas a
+tail-conditional one is the expected cost of minimising squared error.
 
 Detection performance at threshold AQI > 150, h=72:
 
