@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from html import escape
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -552,6 +553,24 @@ def html_table(df: pd.DataFrame, index_header: str = "",
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
+def pearl_logo(size: int = 30) -> str:
+    """10P monogram on a pearl, echoing the cursor so the two custom marks on
+    the page belong to the same family."""
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 40 40" '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'<defs><radialGradient id="pl" cx="32%" cy="28%" r="78%">'
+        f'<stop offset="0%" stop-color="#FFFFFF"/>'
+        f'<stop offset="26%" stop-color="#9FE8FF"/>'
+        f'<stop offset="100%" stop-color="#0A5C8A"/></radialGradient></defs>'
+        f'<circle cx="20" cy="20" r="19" fill="url(#pl)"/>'
+        f'<circle cx="20" cy="20" r="19" fill="none" stroke="#0A5C8A" '
+        f'stroke-opacity=".35"/>'
+        f'<text x="20" y="25.5" text-anchor="middle" fill="#FFFFFF" '
+        f'font-family="IBM Plex Sans, sans-serif" font-size="14" '
+        f'font-weight="600" letter-spacing="-.5">10P</text></svg>')
+
+
 def sparkline(series: pd.Series, colour: str, w: int = 168, h: int = 34) -> str:
     """Tiny inline SVG trend - calmer and cheaper than a chart component."""
     v = series.dropna().tolist()
@@ -652,25 +671,25 @@ def inject_pearl_cluster_cursor():
           layer.id = layerId;
           doc.body.appendChild(layer);
 
-          // Pearl cluster. Colours sweep the full spectrum so the trail reads as
-          // an iridescent strand rather than a single-hue tail.
+          // Pearl cluster. Saturated, high-contrast hues sweeping the spectrum
+          // so the trail stays clearly visible over any of the sky themes.
           const specs = [
-            {size: 17, c1: "#ffffff", c2: "#f4d7ff", c3: "#be7cff"},
-            {size: 15, c1: "#ffffff", c2: "#dcd6ff", c3: "#7c6bff"},
-            {size: 14, c1: "#ffffff", c2: "#c7f9ff", c3: "#34d3ff"},
-            {size: 13, c1: "#ffffff", c2: "#c9fff4", c3: "#19c6b6"},
-            {size: 12, c1: "#ffffff", c2: "#d7ffe8", c3: "#45d483"},
-            {size: 11, c1: "#ffffff", c2: "#ecffd0", c3: "#9fd93a"},
-            {size: 11, c1: "#ffffff", c2: "#ffe8b6", c3: "#ffbf47"},
-            {size: 10, c1: "#ffffff", c2: "#ffdcc0", c3: "#ff9440"},
-            {size:  9, c1: "#ffffff", c2: "#ffd6cf", c3: "#ff6a52"},
-            {size:  9, c1: "#ffffff", c2: "#ffd8e5", c3: "#ff72a0"},
-            {size:  8, c1: "#ffffff", c2: "#ffd4f4", c3: "#f45fd0"},
-            {size:  7, c1: "#ffffff", c2: "#e6ddff", c3: "#8e7dff"},
-            {size:  7, c1: "#ffffff", c2: "#d8fff8", c3: "#33d7c7"},
-            {size:  6, c1: "#ffffff", c2: "#fff0d4", c3: "#ffb341"},
-            {size:  6, c1: "#ffffff", c2: "#d5ecff", c3: "#4aa8ff"},
-            {size:  5, c1: "#ffffff", c2: "#ffe1ec", c3: "#ff5f8f"}
+            {size: 18, c1: "#ffffff", c2: "#ff9d9d", c3: "#ff1f3d"},
+            {size: 16, c1: "#ffffff", c2: "#ffbf87", c3: "#ff6a00"},
+            {size: 15, c1: "#ffffff", c2: "#ffe07a", c3: "#ffb800"},
+            {size: 14, c1: "#ffffff", c2: "#dcff8a", c3: "#8ede00"},
+            {size: 13, c1: "#ffffff", c2: "#8dffbe", c3: "#00c853"},
+            {size: 12, c1: "#ffffff", c2: "#8ffff0", c3: "#00bfa5"},
+            {size: 12, c1: "#ffffff", c2: "#8fe4ff", c3: "#00a6ff"},
+            {size: 11, c1: "#ffffff", c2: "#9fbaff", c3: "#2962ff"},
+            {size: 10, c1: "#ffffff", c2: "#b9a6ff", c3: "#6200ff"},
+            {size: 10, c1: "#ffffff", c2: "#dfa6ff", c3: "#a100ff"},
+            {size:  9, c1: "#ffffff", c2: "#ffa6f4", c3: "#e600d4"},
+            {size:  9, c1: "#ffffff", c2: "#ffa6c8", c3: "#ff0060"},
+            {size:  8, c1: "#ffffff", c2: "#ff9d9d", c3: "#ff1f3d"},
+            {size:  7, c1: "#ffffff", c2: "#ffd07a", c3: "#ff9100"},
+            {size:  7, c1: "#ffffff", c2: "#a6ffd6", c3: "#00e07a"},
+            {size:  6, c1: "#ffffff", c2: "#a6d8ff", c3: "#008cff"}
           ];
 
           const pearls = specs.map((s, i) => {
@@ -680,7 +699,7 @@ def inject_pearl_cluster_cursor():
             el.style.height = `${s.size}px`;
             el.style.opacity = "0";
             el.style.background =
-              `radial-gradient(circle at 30% 28%, ${s.c1} 0 16%, ${s.c2} 38%, ${s.c3} 100%)`;
+              `radial-gradient(circle at 30% 28%, ${s.c1} 0 11%, ${s.c2} 26%, ${s.c3} 82%)`;
             layer.appendChild(el);
 
             return {
@@ -811,8 +830,10 @@ html, body, [class*="css"], .stMarkdown, p, div, span, li, td, th {{
 }}
 
 /* ---- live sky: full-page ambient layer ---- */
+/* z-index -1 matters: at 0 this paints ABOVE the non-positioned page content
+   inside .block-container's stacking context and blanks the whole page. */
 .ambient {{ position:fixed; inset:0; overflow:hidden; pointer-events:none;
-           z-index:0; }}
+           z-index:-1; }}
 .ambient > div {{ position:absolute; }}
 .ambient .sunglow {{ top:-300px; right:-220px; width:1000px; height:1000px;
                     border-radius:50%; animation:breathe 9s ease-in-out infinite; }}
@@ -933,23 +954,53 @@ html, body, [class*="css"], .stMarkdown, p, div, span, li, td, th {{
 .foot {{ border-top:1px solid {RULE}; margin-top:2.8rem; padding-top:1.05rem;
         font-size:.78rem; color:{MUTED}; line-height:1.62; }}
 
-/* assistant, styled so the chat widgets read as part of the bulletin */
-.stChatMessage {{ background:transparent !important; padding:.15rem 0 !important;
-                 border:none !important; }}
-.stChatMessage [data-testid="stChatMessageContent"] p {{ font-size:.93rem;
-                 line-height:1.6; margin-bottom:.4rem; }}
-[data-testid="stChatInput"] {{ background:rgba(255,255,255,.75);
-                 border:1px solid {RULE}; border-radius:4px; }}
-[data-testid="stChatInput"] textarea {{ font-family:'IBM Plex Sans',sans-serif;
-                 font-size:.93rem; }}
-.stButton button {{ background:rgba(255,255,255,.7); border:1px solid {RULE};
-                   color:{INK}; font-size:.8rem; font-weight:500;
-                   border-radius:3px; padding:.36rem .7rem; cursor:none;
-                   white-space:normal; text-align:left; line-height:1.35;
-                   min-height:2.4rem; }}
-.stButton button:hover {{ border-color:{INK}; background:#FFFFFF; color:{INK}; }}
+/* assistant, rendered as a self-contained panel rather than Streamlit's chat
+   widgets, so the logo avatar and bubble styling are fully under our control */
+.chatpanel {{ border:1px solid {RULE}; border-radius:6px; overflow:hidden;
+             background:rgba(255,255,255,.72); margin-top:.55rem;
+             box-shadow:0 1px 3px rgba(34,37,43,.05); }}
+.chathead {{ display:flex; align-items:center; gap:.7rem;
+            padding:.8rem 1.05rem; border-bottom:1px solid {RULE};
+            background:rgba(255,255,255,.85); }}
+.chathead .who {{ font-weight:600; font-size:.92rem; line-height:1.2; }}
+.chathead .sub {{ font-size:.74rem; color:{MUTED}; margin-top:.1rem; }}
+.chathead .live {{ margin-left:auto; font-size:.68rem; color:{sky['accent']};
+                  border:1px solid {sky['accent']}55; border-radius:99px;
+                  padding:.16rem .55rem; white-space:nowrap; font-weight:600; }}
+.chatbody {{ padding:1.05rem 1.05rem .6rem; max-height:460px; overflow-y:auto; }}
+.chatbody .empty {{ font-size:.88rem; color:{MUTED}; line-height:1.6;
+                   padding:.2rem 0 .8rem; }}
+.msg {{ display:flex; gap:.65rem; margin-bottom:1rem; align-items:flex-start; }}
+.msg .bub {{ font-size:.92rem; line-height:1.62; padding:.62rem .9rem;
+            border-radius:4px; max-width:min(46rem,86%); }}
+.msg.bot .bub {{ background:rgba(255,255,255,.95); border:1px solid {RULE}; }}
+.msg.you {{ flex-direction:row-reverse; }}
+.msg.you .bub {{ background:{INK}; color:#F5F6F5; border:1px solid {INK}; }}
+.msg .ava {{ flex:0 0 auto; line-height:0; margin-top:.15rem; }}
+.msg.you .ava {{ width:28px; height:28px; border-radius:50%;
+                border:1px solid {RULE}; background:rgba(255,255,255,.9);
+                display:flex; align-items:center; justify-content:center;
+                font-size:.7rem; font-weight:600; color:{MUTED}; line-height:1; }}
+.chatfoot {{ border-top:1px solid {RULE}; padding:.75rem 1.05rem;
+            background:rgba(255,255,255,.55); }}
+
+/* the form inside the panel footer */
+.chatfoot ~ div [data-testid="stForm"], [data-testid="stForm"] {{
+  border:none !important; padding:0 !important; background:transparent !important; }}
+.stTextInput input {{ font-family:'IBM Plex Sans',sans-serif; font-size:.92rem;
+                     background:rgba(255,255,255,.9); border:1px solid {RULE};
+                     border-radius:4px; color:{INK}; }}
+.stTextInput input:focus {{ border-color:{INK}; box-shadow:none; }}
+.stButton button, .stFormSubmitButton button {{
+  background:rgba(255,255,255,.75); border:1px solid {RULE}; color:{INK};
+  font-size:.8rem; font-weight:500; border-radius:4px; padding:.42rem .8rem;
+  cursor:none; white-space:normal; text-align:left; line-height:1.35;
+  min-height:2.5rem; }}
+.stButton button:hover, .stFormSubmitButton button:hover {{
+  border-color:{INK}; background:#FFFFFF; color:{INK}; }}
+.stFormSubmitButton button {{ text-align:center; font-weight:600; }}
 .chatnote {{ font-size:.78rem; color:{MUTED}; line-height:1.55;
-            border-left:2px solid {RULE}; padding-left:.7rem; margin:.2rem 0 1rem; }}
+            border-left:2px solid {RULE}; padding-left:.7rem; margin:.9rem 0 0; }}
 .tbl {{ margin-top:.55rem; overflow-x:auto; }}
 .tbl table {{ width:100%; border-collapse:collapse; font-size:.86rem; }}
 .tbl thead th {{ font-weight:600; font-size:.74rem; color:{MUTED};
@@ -1179,6 +1230,106 @@ else:
                 "most cumulatively: two or three days of ventilation clears the air "
                 "far more than one windy hour.</div>", unsafe_allow_html=True)
 
+# ------------------------------------------------------------------ assistant
+st.markdown("<div class='sec'>Ask about going outside</div>",
+            unsafe_allow_html=True)
+
+try:
+    from src.app import assistant as bot
+except Exception:                                             # noqa: BLE001
+    import importlib.util as _il
+    _spec = _il.spec_from_file_location(
+        "assistant", Path(__file__).parent / "assistant.py")
+    bot = _il.module_from_spec(_spec)
+    _spec.loader.exec_module(bot)
+
+_key = bot.api_key()
+
+if not _key:
+    st.markdown(
+        "<div class='note'>The assistant needs an OpenAI key. Add "
+        "<code>OPENAI_API_KEY</code> to <code>.streamlit/secrets.toml</code> "
+        "locally, or to the app's Secrets panel on Streamlit Cloud.</div>",
+        unsafe_allow_html=True)
+else:
+    if "chat" not in st.session_state:
+        st.session_state.chat = []
+
+    # ---- the panel: header, transcript, all as one markup block so the
+    #      bubbles and the 10P avatar are entirely under our control
+    if st.session_state.chat:
+        body = "".join(
+            (f'<div class="msg bot"><div class="ava">{pearl_logo()}</div>'
+             f'<div class="bub">{escape(m["content"])}</div></div>')
+            if m["role"] == "assistant" else
+            (f'<div class="msg you"><div class="ava">You</div>'
+             f'<div class="bub">{escape(m["content"])}</div></div>')
+            for m in st.session_state.chat)
+    else:
+        body = ("<div class='empty'>Tell me what you're planning and how you're "
+                "feeling, and I'll say whether now is a good time to be outside. "
+                "I read the live readings and forecast on this page rather than "
+                "guessing from general knowledge.</div>")
+
+    st.markdown(f"""
+<div class="chatpanel">
+  <div class="chathead">
+    {pearl_logo(32)}
+    <div><div class="who">Air quality assistant</div>
+         <div class="sub">Grounded in this page's live readings</div></div>
+    <div class="live">AQI {fc['current_aqi']:.0f} · {sky['word'].lower()}</div>
+  </div>
+  <div class="chatbody">{body}</div>
+</div>""", unsafe_allow_html=True)
+
+    # ---- input, inside a form so Enter submits and the box clears itself
+    with st.form("askform", clear_on_submit=True):
+        c1, c2 = st.columns([6, 1])
+        with c1:
+            typed = st.text_input("ask", placeholder="Can I go for a walk right now?",
+                                  label_visibility="collapsed")
+        with c2:
+            sent = st.form_submit_button("Ask", use_container_width=True)
+
+    question = typed.strip() if (sent and typed and typed.strip()) else None
+
+    if not st.session_state.chat and not question:
+        cols = st.columns(len(bot.SUGGESTIONS))
+        for col, sug in zip(cols, bot.SUGGESTIONS):
+            with col:
+                if st.button(sug, key=f"sug_{abs(hash(sug))}",
+                             use_container_width=True):
+                    question = sug
+
+    if question:
+        st.session_state.chat.append({"role": "user", "content": question})
+        # Context is rebuilt every turn from the objects this page already
+        # rendered, so the assistant cannot drift from what the user is seeing.
+        hist_series = (aq["us_aqi"] if not aq.empty and "us_aqi" in aq else None)
+        context = bot.build_context(fc, arow, wrow, sky, hist_series)
+        try:
+            with st.spinner("Checking the readings..."):
+                reply = bot.ask(question, st.session_state.chat[:-1],
+                                context, _key)
+            st.session_state.chat.append({"role": "assistant", "content": reply})
+        except Exception as exc:                              # noqa: BLE001
+            st.session_state.chat.append({
+                "role": "assistant",
+                "content": f"I couldn't reach the assistant service "
+                           f"({type(exc).__name__}). The readings and forecast "
+                           f"on this page are unaffected."})
+        st.rerun()
+
+    st.markdown(
+        "<div class='chatnote'>Everyday guidance, not medical advice. See a "
+        "doctor for symptoms that persist or worsen, and seek emergency care "
+        "for severe breathing difficulty or chest pain.</div>",
+        unsafe_allow_html=True)
+
+    if st.session_state.chat and st.button("Clear conversation", key="clearchat"):
+        st.session_state.chat = []
+        st.rerun()
+
 # ------------------------------------------------------------------ accuracy
 st.markdown("<div class='sec'>How accurate has this been?</div>",
             unsafe_allow_html=True)
@@ -1314,18 +1465,6 @@ if meta:
 st.markdown("<div class='sec'>What the model looks at overall</div>",
             unsafe_allow_html=True)
 if True:
-    st.markdown(
-        "<div class='advice' style='font-size:.96rem'>"
-        "Two models run for each horizon. One predicts the most likely AQI. A "
-        "separate model predicts a 90th-percentile upper bound, used only for the "
-        "warning — a single model optimised for both jobs hedges toward the "
-        "average and misses the days that matter most.\n\n"
-        "Inputs divide into what is known now — recent pollutant readings, their "
-        "rolling averages, and how fast AQI is changing — and what is known about "
-        "the future: the weather forecast for the target hour, plus season and "
-        "time of day. At one day out the recent readings dominate. At three days "
-        "they have largely decayed, and season and weather carry the prediction."
-        "</div>", unsafe_allow_html=True)
     imp_path = ROOT / "reports" / "shap_importance_h72.csv"
     if imp_path.exists():
         try:
@@ -1346,83 +1485,6 @@ if True:
                         "at the three-day horizon.</div>", unsafe_allow_html=True)
         except Exception:                                     # noqa: BLE001
             pass
-
-# ------------------------------------------------------------------ assistant
-st.markdown("<div class='sec'>Ask about going outside</div>",
-            unsafe_allow_html=True)
-
-try:
-    from src.app import assistant as bot
-except Exception:                                             # noqa: BLE001
-    import importlib.util as _il
-    _spec = _il.spec_from_file_location(
-        "assistant", Path(__file__).parent / "assistant.py")
-    bot = _il.module_from_spec(_spec)
-    _spec.loader.exec_module(bot)
-
-_key = bot.api_key()
-
-if not _key:
-    st.markdown(
-        "<div class='note'>The assistant needs an OpenAI key. Add "
-        "<code>OPENAI_API_KEY</code> to <code>.streamlit/secrets.toml</code> "
-        "locally, or to the app's Secrets panel on Streamlit Cloud.</div>",
-        unsafe_allow_html=True)
-else:
-    st.markdown(
-        "<div class='chatnote'>Ask whether it's a good time to be outside. "
-        "The assistant reads the live readings and forecast above — it isn't "
-        "guessing from general knowledge. It gives everyday guidance, not "
-        "medical advice; see a doctor for symptoms that persist or worsen, and "
-        "seek emergency care for severe breathing difficulty or chest pain."
-        "</div>", unsafe_allow_html=True)
-
-    if "chat" not in st.session_state:
-        st.session_state.chat = []
-
-    if not st.session_state.chat:
-        cols = st.columns(len(bot.SUGGESTIONS))
-        for col, s in zip(cols, bot.SUGGESTIONS):
-            with col:
-                if st.button(s, key=f"sug_{hash(s)}", use_container_width=True):
-                    st.session_state.pending = s
-
-    for msg in st.session_state.chat:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    typed = st.chat_input("Can I go for a walk right now?")
-    question = typed or st.session_state.pop("pending", None)
-
-    if question:
-        st.session_state.chat.append({"role": "user", "content": question})
-        with st.chat_message("user"):
-            st.markdown(question)
-
-        # Context is rebuilt on every turn from the objects this page already
-        # rendered, so the assistant cannot drift from what the user is seeing.
-        hist_series = (aq["us_aqi"] if not aq.empty and "us_aqi" in aq
-                       else None)
-        context = bot.build_context(fc, arow, wrow, sky, hist_series)
-
-        with st.chat_message("assistant"):
-            try:
-                with st.spinner(""):
-                    reply = bot.ask(question, st.session_state.chat[:-1],
-                                    context, _key)
-                st.markdown(reply)
-                st.session_state.chat.append({"role": "assistant",
-                                              "content": reply})
-            except Exception as exc:                          # noqa: BLE001
-                st.markdown(f"<div class='note'>Couldn't reach the assistant "
-                            f"({type(exc).__name__}). The readings and forecast "
-                            f"above are unaffected.</div>",
-                            unsafe_allow_html=True)
-
-    if st.session_state.chat:
-        if st.button("Clear conversation", key="clearchat"):
-            st.session_state.chat = []
-            st.rerun()
 
 errs = [e for e in (aq_err, wx_err) if e is not None]
 st.markdown(
