@@ -18,3 +18,4 @@ __pycache__/
 
 # sequence models (large, and not part of the production stack)
 models/seq_*.pt
+.streamlit/secrets.toml

@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import joblib
@@ -60,6 +61,12 @@ import requests
 
 from src import config as cfg
 from src.features.build_features import forecast_features, origin_features
+
+try:
+    import shap
+    HAS_SHAP = True
+except ImportError:
+    HAS_SHAP = False
 
 # history needed before the origin for the longest window (lag168 / rmean168)
 HISTORY_HOURS = 24 * 14
@@ -359,6 +366,117 @@ def expected_features(horizon: int) -> list[str]:
 
 
 # --------------------------------------------------------------------------- #
+# per-prediction explanation
+# --------------------------------------------------------------------------- #
+# Raw feature names are precise but unreadable. These turn them into something
+# a non-technical reader can follow on the dashboard.
+_POLLUTANT_NAMES = {
+    "pm2_5": "PM2.5", "pm10": "PM10", "ozone": "Ozone",
+    "nitrogen_dioxide": "NO\u2082", "sulphur_dioxide": "SO\u2082",
+    "carbon_monoxide": "CO", "dust": "Dust",
+    "aerosol_optical_depth": "Aerosol depth",
+}
+_WEATHER_NAMES = {
+    "temperature_2m": "Temperature", "relative_humidity_2m": "Humidity",
+    "dew_point_2m": "Dew point", "precipitation": "Rain",
+    "surface_pressure": "Pressure", "cloud_cover": "Cloud cover",
+    "wind_speed_10m": "Wind speed", "wind_gusts_10m": "Wind gusts",
+    "shortwave_radiation": "Sunlight",
+}
+
+
+def humanise(feat: str) -> str:
+    """Turn a feature name into plain language for the dashboard."""
+    f = re.sub(r"_h\d+$", "", feat)
+    forecast = f.endswith("_f")
+    f = f[:-2] if forecast else (f[:-2] if f.endswith("_t") else f)
+    suffix = " (forecast)" if forecast else ""
+
+    fixed = {
+        "us_aqi": "AQI now",
+        "us_aqi_same_hour_yesterday": "AQI at this hour yesterday",
+        "us_aqi_anomaly_vs_72h": "AQI vs its 3-day average",
+        "pm25_pm10_ratio": "PM2.5 to PM10 ratio",
+        "dew_spread": "Dew point spread",
+        "hour_sin": "Time of day", "hour_cos": "Time of day", "hour": "Time of day",
+        "doy_sin": "Season", "doy_cos": "Season",
+        "month": "Month", "dayofweek": "Day of week", "is_weekend": "Weekend",
+        "wind_dir_sin": "Wind direction", "wind_dir_cos": "Wind direction",
+    }
+    if f in fixed:
+        return fixed[f] + suffix
+
+    for pat, tmpl in [
+        (r"^us_aqi_lag(\d+)$", "AQI {0}h ago"),
+        (r"^us_aqi_rmean(\d+)$", "AQI, {0}h average"),
+        (r"^us_aqi_rstd(\d+)$", "AQI swing over {0}h"),
+        (r"^us_aqi_rmax(\d+)$", "AQI peak in last {0}h"),
+        (r"^us_aqi_rmin(\d+)$", "AQI low in last {0}h"),
+        (r"^us_aqi_delta(\d+)$", "AQI change over {0}h"),
+        (r"^us_aqi_rate(\d+)$", "AQI trend over {0}h"),
+        (r"^wind_rmean(\d+)$", "Wind, {0}h average"),
+        (r"^precip_rsum(\d+)$", "Rain, {0}h total"),
+        (r"^temp_rmean(\d+)$", "Temperature, {0}h average"),
+    ]:
+        m = re.match(pat, f)
+        if m:
+            return tmpl.format(m.group(1)) + suffix
+
+    for key, name in _POLLUTANT_NAMES.items():
+        if f.startswith(key):
+            rest = f[len(key):]
+            m = re.match(r"^_r(\d+)h$", rest)
+            if m:
+                return f"{name}, {m.group(1)}h average"
+            m = re.match(r"^_lag(\d+)$", rest)
+            if m:
+                return f"{name} {m.group(1)}h ago"
+            m = re.match(r"^_delta(\d+)$", rest)
+            if m:
+                return f"{name} change over {m.group(1)}h"
+            if rest == "":
+                return name + suffix
+
+    for key, name in _WEATHER_NAMES.items():
+        if f == key:
+            return name + suffix
+
+    return feat.replace("_", " ")
+
+
+def explain(model, row: pd.DataFrame, top_n: int = 8) -> dict | None:
+    """SHAP contributions for this one prediction.
+
+    Computed here rather than in the dashboard because the model and the
+    feature row are already loaded, which keeps the dashboard free of
+    scikit-learn, xgboost and shap - and guarantees the explanation always
+    corresponds to the number it explains.
+    """
+    if not HAS_SHAP:
+        return None
+    try:
+        est, X = model, row
+        if hasattr(model, "steps"):                # unwrap a Pipeline
+            est = model.steps[-1][1]
+            X = pd.DataFrame(model[:-1].transform(row),
+                             columns=row.columns, index=row.index)
+
+        values = shap.TreeExplainer(est)(X, check_additivity=False)
+        contrib = pd.Series(values.values[0], index=row.columns)
+        base = float(pd.Series(values.base_values).astype(float).iloc[0])
+
+        top = contrib.reindex(contrib.abs().sort_values(ascending=False).index)[:top_n]
+        return {
+            "baseline": round(base, 1),
+            "drivers": [{"feature": k, "label": humanise(k),
+                         "effect": round(float(v), 2)} for k, v in top.items()],
+        }
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"    explanation unavailable ({type(exc).__name__})")
+        return None
+
+
+# --------------------------------------------------------------------------- #
 def predict(local: bool = False, pin: int | None = None) -> dict:
     warnings: list[str] = []
 
@@ -395,6 +513,7 @@ def predict(local: bool = False, pin: int | None = None) -> dict:
                 f"90th-percentile forecast {upper:.0f} exceeds {ALERT_THRESHOLD}"
                 if upper > ALERT_THRESHOLD else None
             ),
+            "explanation": explain(point_m, row),
             "models": prov,
         })
 
