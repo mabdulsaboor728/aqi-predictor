@@ -44,7 +44,7 @@ and carries a scope limited health assistant grounded in the same live data.
    pollutants. Matching those averaging windows in the features raised the
    correlation between PM2.5 and winter AQI from 0.573 to **0.966**.
 2. Wind clears pollution cumulatively, not instantly. Same hour wind speed
-   correlates −0.109 with AQI; a 72-hour rolling mean correlates **−0.356**.
+   correlates −0.109 with AQI; a 72 hour rolling mean correlates **−0.356**.
 3. The original cross validation design silently froze the training set, so
    "daily retraining" refit identical data every day. Fixing it also reversed
    the model ranking.
@@ -120,7 +120,7 @@ a single grep, which is a stronger guarantee than a claim of care.
 | Source | Endpoint | Variables |
 |---|---|---|
 | Air quality | Open Meteo, CAMS global | 9 (8 pollutants + `us_aqi`) |
-| Weather | Open-Meteo Historical Forecast | 12 |
+| Weather | Open Meteo Historical Forecast | 12 |
 
 Coverage: 5 August 2022 to present, hourly, at 33.6844°N 73.0479°E.
 
@@ -327,7 +327,7 @@ target hour.
 | Wind direction | 2 | sin/cos encoding |
 | Rolling weather | 9 | wind mean, precipitation sum, temperature mean over 24/48/72h |
 | Inversion proxy | 1 | dew-point spread |
-| Calendar | 8 | hour sin/cos, day-of-year sin/cos, hour, month, weekday, weekend flag |
+| Calendar | 8 | hour sin/cos, day of year sin/cos, hour, month, weekday, weekend flag |
 
 ### 5.2 Features derived from the EDA
 
@@ -352,7 +352,7 @@ more informative than the absolute value during a seasonal transition.
 
 A subtlety worth stating precisely. `wind_rmean72_f` evaluated at `t+24` covers
 `t−48` through `t+24`: partly past actuals, partly forecast. Both are available
-when the forecast is issued, so the feature is legitimate — but the serving
+when the forecast is issued, so the feature is legitimate, but the serving
 code must concatenate recent actual weather with the forecast into one
 continuous hourly series *before* computing any rolling statistic. Computing it
 on the forecast alone produces silently wrong values that nothing downstream
@@ -378,7 +378,7 @@ In routine operation this drops five or six rows per run.
 
 Three mechanisms guard against optimistic evaluation.
 
-**Purged walk-forward cross-validation.** A training row at time T carries a
+**Purged walk forward cross validation.** A training row at time T carries a
 target at T + horizon. If validation begins at T + 1, that target lies inside
 the validation window and the model has effectively seen the answer. Standard
 `TimeSeriesSplit` does not handle this. A gap of `horizon + 24` hours separates
@@ -414,7 +414,7 @@ The system's automated retraining was performing no learning.
 Replaced with a holdout of fixed *length* anchored to the end of the data. The
 training set now grows; the evaluation window stays approximately comparable
 across versions, differing by a day rather than by months. Each registered
-model records its exact holdout window in metadata so any cross-version
+model records its exact holdout window in metadata so any cross version
 comparison can be audited rather than assumed valid.
 
 ### 6.3 The cross validation fix that reversed the ranking
@@ -457,7 +457,7 @@ on the development set:
 | HistGradientBoosting | **16.87 (±1.40)** | 21.38 (±1.26) | 22.54 (±1.72) |
 | XGBoost | 16.94 (±1.32) | **21.03 (±1.23)** | **22.47 (±1.68)** |
 
-Held-out year, selected model per horizon:
+Held out year, selected model per horizon:
 
 | Horizon | Model | RMSE | MAE | R² | Persistence RMSE | Gain |
 |---|---|---|---|---|---|---|
@@ -493,7 +493,7 @@ events are genuine outliers that would dominate an MSE gradient.
 Both recurrent models sit between persistence and gradient boosting.
 Importantly, their advantage over persistence stays flat with horizon (13.9% →
 14.1% for GRU) while boosting's grows (16.9% → 22.4%) the sequence models are
-weakest at exactly the horizon where seasonal and forecast-weather structure
+weakest at exactly the horizon where seasonal and forecast weather structure
 must carry the prediction, which the hand built features encode explicitly and
 the networks would have had to discover.
 
@@ -517,11 +517,11 @@ preserves extremes structurally.
 
 **Conclusion: gradient boosting is the production model.** Deep learning was
 tested under an identical protocol and rejected on evidence. Its lower
-mean-reversion bias is recorded as support for the same insight that motivated
+mean reversion bias is recorded as support for the same insight that motivated
 the quantile alert head.
 
 The GRU versus LSTM difference (0.6 to 1.9 RMSE, single seeds) is within
-seed-to-seed noise and no claim is made about it.
+seed to seed noise and no claim is made about it.
 
 ### 6.6 Mean reversion, and the two head design
 
@@ -538,7 +538,7 @@ These figures are **conditional** on the target exceeding AQI 150. Overall bias
 across all holdout hours is near zero at every horizon. The model is not
 systematically low; it is systematically low *in the tail*. That distinction
 matters: an unconditional bias of −28 would be a calibration failure, whereas a
-tail-conditional one is the expected cost of minimising squared error.
+tail conditional one is the expected cost of minimising squared error.
 
 This is textbook squared error behaviour: RMSE rewards hedging toward the mean.
 It is also precisely the wrong behaviour for a system whose stated purpose
@@ -557,10 +557,10 @@ Detection performance at threshold AQI > 150, h=72:
 | Quantile 0.90 | 0.62 | 0.58 | 30.09 |
 | Quantile 0.95 | 0.72 | 0.46 | 35.93 |
 
-The RMSE-optimal model is not broken, it is correctly optimised for the wrong
+The RMSE optimal model is not broken, it is correctly optimised for the wrong
 objective. **Two models per horizon** are therefore trained and deployed:
 
-- **Point head**  RMSE-optimal, produces the number shown on the dashboard.
+- **Point head**  RMSE optimal, produces the number shown on the dashboard.
 - **Alert head**  HistGradientBoosting with quantile loss at α = 0.90, used
   only for the threshold warning.
 
@@ -590,7 +590,7 @@ assumption:
 | Ridge + GBM blend | −1% at h=24, worse at h=72 | rejected |
 | HistGBM + XGBoost average | 22.51 vs 22.41 — inside noise | rejected |
 | Sample weighting toward high AQI | RMSE 22.51 vs 22.59, bias −25.0 vs −28.0 | not adopted; quantile head is a cleaner fix |
-| Deeper boosting (31–63 leaves) | worse at every horizon | rejected — 7 leaves chosen |
+| Deeper boosting (31–63 leaves) | worse at every horizon | rejected, 7 leaves chosen |
 
 The tuning sweep found that *shallower and more regularised* beat the default
 capacity at every horizon, which says the signal lives in the feature
@@ -637,7 +637,7 @@ at `t+h`, and forecast side features must describe the target hour.
 > target 78.0, which is `us_aqi` at 2024-04-24 00:00; its temperature feature
 > is the temperature at that same hour.
 
-**Test C — correlation ceiling.** No origin feature may correlate with the
+**Test C: correlation ceiling.** No origin feature may correlate with the
 target more strongly than the raw autocorrelation allows.
 
 > Result: top origin correlation is `us_aqi_t` at 0.8046 (h=24) and 0.6029
@@ -701,9 +701,9 @@ here: the model learned the physics rather than memorising the target.
 ### 8.3 Individual features
 
 At h=24, `us_aqi_t` dominates (mean |SHAP| 15.25), followed by
-`wind_rmean24_f` at 4.16 — notably high for a variable whose raw correlation
-with AQI is only −0.30, and consistent with the cumulative-ventilation finding.
-A per-prediction waterfall plot is generated for the highest AQI holdout hour
+`wind_rmean24_f` at 4.16; notably high for a variable whose raw correlation
+with AQI is only −0.30, and consistent with the cumulative ventilation finding.
+A per prediction waterfall plot is generated for the highest AQI holdout hour
 and doubles as the dashboard's explanation panel.
 
 ---
@@ -788,13 +788,13 @@ runs.
 
 Streamlit, deployed on Community Cloud. It reads only committed JSON and the
 public Open Meteo API, so it needs no Hopsworks credentials and deploys from a
-four-package requirement file. The heavier development dependencies live in a
+four package requirement file. The heavier development dependencies live in a
 separate `requirements-dev.txt`, because Hopsworks pulls in `confluent-kafka`,
 which needs a C library absent from the Streamlit runner.
 
 Sections, in order: the current reading with health guidance and live pollutant
-loads; a three-day outlook with the 90th percentile band; current weather; the
-assistant (Section 9.6); forecast-versus-actual accuracy; a per-prediction
+loads; a three day outlook with the 90th percentile band; current weather; the
+assistant (Section 9.6); forecast versus actual accuracy; a per prediction
 explanation; and the model comparison.
 
 **Two panels do work a typical dashboard does not.**
@@ -858,9 +858,6 @@ and never comments on medication. Persistent or worsening symptoms get a
 recommendation to see a doctor. Scope is limited to air quality, weather and
 outdoor activity, with anything else politely redirected.
 
-The API key is read from Streamlit secrets with an environment variable
-fallback, and is never committed.
-
 ---
 
 ## 10. Engineering and reliability
@@ -893,14 +890,14 @@ downgraded.
 **Spurious `index` column.** Boolean-filtering a DataFrame under pandas 2.x
 produces a plain `Index` rather than a `RangeIndex`, so `reset_index()` injected
 a column named `index` that broke the feature group schema. The bug appeared
-only in the incremental path — which local testing had never exercised, because
+only in the incremental path, which local testing had never exercised, because
 every local run used `--skip-push`. A guard now raises locally with a clear
-message rather than failing server-side.
+message rather than failing server side.
 
 **Schema drift from dtype inference.** After narrowing the hourly fetch to 60
 days, a column with no NaN in that window inferred `int64` where the schema
 expected `double`, and the write was rejected. Two attempts to fix this by
-guessing dtypes from column names were both wrong, in opposite directions —
+guessing dtypes from column names were both wrong, in opposite directions,
 `relative_humidity_2m` is stored as `bigint` while `ozone` is `double`, which
 no naming convention predicts. The correct fix reads `fg.features` from
 Hopsworks and casts to whatever the group actually declares. **The server is
@@ -908,25 +905,24 @@ the only reliable source of truth for its own schema.**
 
 **A transient read triggering a destructive backfill.** `latest_timestamp()`
 caught every exception and returned `None`. A transient Query Service failure
-therefore made an existing 35,000-row group look empty, and the incremental job
-responded by launching a full backfill from a 60-day local window. Now a failed
+therefore made an existing 35,000 row group look empty, and the incremental job
+responded by launching a full backfill from a 60 day local window. Now a failed
 read raises, `None` means only "the group does not exist", and a size check
-refuses to backfill from insufficient local data. *This exact failure mode had
-been flagged in a code review two days before it occurred.*
+refuses to backfill from insufficient local data. 
 
 **Half-registered models.** The Hopsworks metadata cluster intermittently
-returns HTTP 500 mid-upload, leaving four of six models registered and failing
+returns HTTP 500 mid upload, leaving four of six models registered and failing
 the job. Registration is now retried with `create_model` inside the retry loop
-— a half-created version cannot be saved into again — and any model still
+ a half created version cannot be saved into again, and any model still
 unregistered after retries fails the job explicitly rather than exiting green
 with an inconsistent registry.
 
 **Concurrent pushes.** Both workflows commit to `main`. A daily run lasting the
 best part of an hour would find the remote moved by the hourly job and its push
-rejected — failing a job whose training and registration had already succeeded.
+rejected, failing a job whose training and registration had already succeeded.
 Both now stash uncommitted pipeline artifacts, then rebase and retry.
 
-### 10.3 Read-latency growth
+### 10.3 Read latency growth
 
 Feature store read time grew measurably over the first week of operation:
 
@@ -940,17 +936,17 @@ The cause is Delta commit accumulation: each hourly insert creates a new file,
 and every read merges them all. At 136 s the read began exceeding the Query
 Service's own timeout, causing three consecutive hourly failures.
 
-The hourly job was restructured to source history from Open-Meteo instead —
+The hourly job was restructured to source history from Open Meteo instead,
 the actual system of record, already being called, and equally fast for 60 days
 as for 10. The feature store became a write sink on that path, and it was
-verified that a 60-day window produces features **identical to the full
-four-year series** (maximum difference 1.2 × 10⁻¹¹ across the rebuild tail).
+verified that a 60 day window produces features **identical to the full
+four year series** (maximum difference 1.2 × 10⁻¹¹ across the rebuild tail).
 The daily training job still reads the store in full, where a slow read once a
 day is acceptable.
 
 ### 10.4 Environment reproducibility
 
-A CI run failed with `ModuleNotFoundError: No module named '_loss'` — a
+A CI run failed with `ModuleNotFoundError: No module named '_loss'`, a
 scikit-learn internal. Models pickled on macOS could not be unpickled by the
 CI runner's different scikit-learn version. Pickled artifacts are bound to the
 exact library versions that created them.
@@ -968,12 +964,12 @@ Streamlit runner.
 
 Stated plainly, in order of importance.
 
-### 11.1 Forecast lead-time skew — the most significant limitation
+### 11.1 Forecast lead time skew; the most significant limitation
 
-Weather features are drawn from Open-Meteo's Historical Forecast archive, which
+Weather features are drawn from Open Meteo's Historical Forecast archive, which
 stitches together the *early* hours of successive model runs. The archived
 value for a given past hour therefore came from a run initialised a few hours
-earlier — not 72 hours earlier.
+earlier, not 72 hours earlier.
 
 In production, the `t+72` weather feature will come from a genuine 72-hour-lead
 forecast, which is meaningfully less accurate. **The model is trained on better
@@ -981,14 +977,14 @@ weather than it will ever see live**, so the reported holdout scores are
 optimistic to an unquantified degree.
 
 This is train/serve skew, not target leakage: no future AQI touches the model,
-as Section 7 verifies. But it is real, and SHAP shows weather-forecast features
+as Section 7 verifies. But it is real, and SHAP shows weather forecast features
 carry ~37% of importance at 72 hours, so it is not negligible.
 
 **Two remedies.** The rigorous fix is Open-Meteo's `previous_runs` archive,
 which serves forecasts at a specified lead time, allowing each horizon's
 features to be built from a genuinely matched forecast. This requires rebuilding
-every weather feature and a full re-backfill. The measurement approach — already
-underway — logs live forecasts hourly and will allow live error to be compared
+every weather feature and a full re backfill. The measurement approach, already
+underway, logs live forecasts hourly and will allow live error to be compared
 against holdout error directly within a few weeks, quantifying the skew rather
 than assuming it is small.
 
@@ -997,33 +993,33 @@ than assuming it is small.
 The target is a CAMS global model estimate at roughly 40 km resolution, not a
 ground station reading. Over four years the maximum observed value is 218, which
 is lower than Islamabad ground sensors report. **The system forecasts CAMS, not
-measured air quality.** Spatial detail — traffic corridors, industrial plumes —
-is smoothed away. Ground-station data would both improve realism and provide a
-higher-variance target that is harder but more useful to predict.
+measured air quality.** Spatial detail, traffic corridors, industrial plumes,
+is smoothed away. Ground station data would both improve realism and provide a
+higher variance target that is harder but more useful to predict.
 
 ### 11.3 Metric comparability across registry versions
 
 Model selection compares registered metrics across versions, which is strictly
 valid only if all versions were scored on identical rows. The rolling holdout
-keeps windows the same *length*, so consecutive retrains differ by one day — but
+keeps windows the same *length*, so consecutive retrains differ by one day, but
 over months they diverge. Each version records its exact window so a comparison
 can be audited. A fully rigorous scheme would rescore every candidate on one
 frozen benchmark before selection.
 
 A visible consequence: point heads currently remain at version 1 because later
 retrains scored marginally worse on slightly shifted windows. The mechanism is
-working as designed — a worse model is never served — but it means no retrained
+working as designed, a worse model is never served, but it means no retrained
 point model has yet reached production.
 
-### 11.4 Missing-data policy differs between training and serving
+### 11.4 Missing data policy differs between training and serving
 
-Training drops only null targets; Ridge and Random Forest median-impute
+Training drops only null targets; Ridge and Random Forest median impute
 features while the boosting models handle nulls natively. Serving rejects any
 null before predicting. Model selection therefore includes rows that production
 would refuse to serve. In practice the feature set is complete after the
-warm-up period, so the effect is small, but the policies should be unified.
+warm up period, so the effect is small, but the policies should be unified.
 
-### 11.5 Extreme events are under-represented
+### 11.5 Extreme events are under represented
 
 The Very Unhealthy band contains 17 holdout hours across four years. Alert
 performance above AQI 200 cannot be meaningfully assessed from this data, and
@@ -1032,7 +1028,7 @@ is adequate.
 
 ### 11.6 The assistant is a language model
 
-The chat helper is grounded in live data and scope-limited, but it is still a
+The chat helper is grounded in live data and scope limited, but it is still a
 language model and can misread a question or phrase guidance poorly. It is
 positioned as everyday guidance rather than medical advice, routes severe
 symptoms to emergency care, and states its own limits in the interface. It has
@@ -1040,11 +1036,11 @@ not been formally evaluated against clinical guidelines, which would be
 necessary before presenting it as anything more than a convenience layer over
 the numbers already on the page.
 
-### 11.7 Hopsworks free-tier dependency
+### 11.7 Hopsworks free tier dependency
 
 Daily retraining reads the full feature groups from Hopsworks. If that account
-lapses, retraining stops. Nothing user-facing does: the hourly job sources
-history from Open-Meteo and treats the feature-store push as non-fatal,
+lapses, retraining stops. Nothing user facing does: the hourly job sources
+history from Open Meteo and treats the feature store push as non fatal,
 inference falls back to model files committed to the repository, and the
 dashboard has no Hopsworks dependency at all. Forecasts would continue to
 publish with a frozen model until the account is restored or the daily job is
@@ -1052,9 +1048,9 @@ pointed at a rebuilt dataset.
 
 ### 11.8 Single location
 
-All results are for one grid cell. The pipeline is coordinate-parameterised and
-would run elsewhere, but the feature design — particularly the sub-index window
-matching — was validated against Islamabad's seasonal chemistry and would need
+All results are for one grid cell. The pipeline is coordinate parameterised and
+would run elsewhere, but the feature design, particularly the sub index window
+matching, was validated against Islamabad's seasonal chemistry and would need
 revalidation for a city with different dominant pollutants.
 
 ---
@@ -1063,22 +1059,22 @@ revalidation for a city with different dominant pollutants.
 
 Ordered by expected value per unit of effort.
 
-1. **Lead-time-matched weather features** via `previous_runs`. Removes the
+1. **Lead time matched weather features** via `previous_runs`. Removes the
    headline limitation and would give an honest estimate of live performance.
-2. **Ground-station data** from the Pakistan EPA or Punjab AQI network,
+2. **Ground station data** from the Pakistan EPA or Punjab AQI network,
    fused with or replacing CAMS as the target. The single largest realism gain.
 3. **A frozen benchmark window** scored alongside the rolling holdout, making
-   cross-version model selection rigorous and enabling true drift detection —
+   cross version model selection rigorous and enabling true drift detection,
    a degrading rolling metric against a flat frozen one means the world changed,
    not the code.
-4. **Fire and crop-burning proxies**, such as MODIS/VIIRS active fire counts
+4. **Fire and crop burning proxies**, such as MODIS/VIIRS active fire counts
    upwind. The residual error at 72 hours is largely events that weather
    features cannot observe.
-5. **Feature-store compaction**, scheduled, to bound the read-latency growth
+5. **Feature store compaction**, scheduled, to bound the read latency growth
    documented in Section 10.3.
 6. **Feature pruning.** 91 features from 20 variables is a high expansion
    ratio with substantial redundancy. SHAP suggests a much smaller set carries
-   the signal; a leaner model would retrain faster and be easier to defend.
+   the signal; a leaner model would retrain faster.
 7. **Multi-city rollout**, which the configuration design already supports.
 
 ---
@@ -1126,29 +1122,13 @@ OPENAI_API_KEY = "sk-..."
 
 Both secrets files are gitignored.
 
-Deep-learning comparison (requires `torch`):
+Deep learning comparison (requires `torch`):
 
 ```bash
 python -m src.models.lstm --arch gru
 python -m src.models.lstm --arch lstm
 ```
 
----
-
-## 14. Closing note
-
-The most valuable outcomes of this project were not the accuracy figures.
-
-The single largest quality improvement came from reading the US AQI definition
-carefully enough to notice it is built from rolling averages — a
-domain-understanding gain, not a modelling one. The most consequential bug fix
-was to the cross-validation protocol, which had been quietly freezing the
-training set and had also produced the wrong model ranking. And the alert
-system exists in its current form because a measurement showed the accurate
-model was missing three-quarters of the days it most needed to catch.
-
-Each of those came from asking what the numbers meant rather than whether they
-had improved.
 
 The same instinct shaped the interface. The dashboard shows how its own past
 forecasts scored rather than only asserting accuracy, and the assistant is
