@@ -1,47 +1,3 @@
-"""
-Hourly pipeline - the CI entrypoint run by .github/workflows/hourly.yml.
-
-    Open-Meteo (last FETCH_DAYS)  ->  clean  ->  features  ->  push  ->  forecast
-
-Where history comes from, and why it changed
---------------------------------------------
-A CI runner starts with an empty filesystem, so data/interim/clean.parquet does
-not exist and history has to come from somewhere each run.
-
-This job originally read history from the Hopsworks feature store. That worked,
-but the read time grew steadily - 2.6s at first, 56s after a few days, 136s
-after a week - because the offline store accumulates one Delta commit per
-insert and every read merges them all. Three consecutive hourly runs eventually
-failed when the read outran the Query Service's own timeout.
-
-Open-Meteo is the actual source of truth, this job already calls it, and it
-serves 60 days as quickly as 10. So history now comes from the API and the
-feature store is a WRITE SINK on this path. That removes a growing, timeout-
-prone dependency from a job that runs 24 times a day. The daily training job
-still reads the store, where a slow read once a day is fine.
-
-FETCH_DAYS must comfortably exceed the longest origin window (168h) plus
-REBUILD_DAYS, so the first rebuilt row has full history behind it.
-
-Target maturity
----------------
-The air-quality API is a CAMS FORECAST product: for the current day it returns
-provisional values for hours that have not happened yet. Those must never
-become training labels, or the model learns to imitate CAMS rather than to
-predict air quality. build_supervised() is given the current hour as a cap so
-only matured targets are written.
-
-Failure policy
---------------
-The feature store PUSH is non-fatal. It is idempotent and re-sends a lookback
-window every run, so a transient failure self-heals on the next hour - blocking
-the forecast for it would turn a recoverable blip into a visible outage.
-
-Run:
-    python -m pipelines.hourly
-    python -m pipelines.hourly --skip-predict
-    python -m pipelines.hourly --skip-push
-"""
 
 from __future__ import annotations
 
@@ -145,6 +101,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:                                          # noqa: BLE001
+    except Exception:                                          
         traceback.print_exc()
         sys.exit(1)

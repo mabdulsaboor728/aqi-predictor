@@ -1,21 +1,4 @@
-"""
-Step 1 - Data ingestion.
 
-Pulls two hourly time series for the configured city and writes them to data/raw/:
-
-  1. Air quality (CAMS global)   -> pollutants + us_aqi   [the target lives here]
-  2. Historical Forecast weather -> meteorological drivers
-
-Why the *Historical Forecast* API and not the ERA5 archive:
-at inference time we will only ever have *forecast* weather for t+24..t+72.
-If we train on reanalysis (ERA5) and serve on forecasts, the model sees a
-different input distribution in production and accuracy drops. The historical
-forecast archive is what the forecast actually said at the time, so train and
-serve stay consistent.
-
-Run:
-    python -m src.data.fetch_openmeteo
-"""
 
 from __future__ import annotations
 
@@ -28,13 +11,11 @@ import requests
 from src import config as cfg
 
 SESSION = requests.Session()
-CHUNK_DAYS = 365          # split long ranges so no single request times out
+CHUNK_DAYS = 365         
 MAX_RETRIES = 4
 
 
-# --------------------------------------------------------------------------- #
-# low-level fetch
-# --------------------------------------------------------------------------- #
+
 def _get_json(url: str, params: dict) -> dict:
     """GET with simple exponential backoff. Open-Meteo rate-limits free usage."""
     for attempt in range(MAX_RETRIES):
@@ -90,16 +71,14 @@ def _fetch_series(url: str, variables: list[str], start: str, end: str,
     return df
 
 
-# --------------------------------------------------------------------------- #
-# public entrypoints
-# --------------------------------------------------------------------------- #
+
 def fetch_air_quality(start: str, end: str) -> pd.DataFrame:
     return _fetch_series(
         cfg.AQ_URL,
         cfg.AQ_VARS,
         start,
         end,
-        extra={"domains": "cams_global"},   # Europe-only domain has no Pakistan coverage
+        extra={"domains": "cams_global"},  
         label="air-quality",
     )
 
@@ -121,7 +100,7 @@ def main() -> None:
     wx.to_parquet(cfg.DATA_RAW / "weather_raw.parquet", index=False)
     print(f"weather     : {wx.shape[0]:>6} rows, {wx.shape[1]} cols")
 
-    # inner join on the hourly timestamp - both are UTC, both hourly
+   
     merged = aq.merge(wx, on="time", how="inner", validate="one_to_one")
     merged.to_parquet(cfg.DATA_RAW / "merged_raw.parquet", index=False)
 

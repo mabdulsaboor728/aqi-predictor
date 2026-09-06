@@ -1,54 +1,4 @@
-"""
-Hopsworks integration - feature store + model registry.
 
-Layout in the project `aqi_proj`:
-
-    aqi_raw_hourly       v1   cleaned hourly observations (source of truth)
-    aqi_features_h24     v1   model-ready features, horizon 24h
-    aqi_features_h48     v1   model-ready features, horizon 48h
-    aqi_features_h72     v1   model-ready features, horizon 72h
-
-Both raw and computed features are stored. The raw group is the audit trail and
-lets you rebuild features after a logic change; the feature groups guarantee
-training and serving read identical columns, which is the drift problem a
-feature store exists to solve.
-
-Primary key is `unix_ts` (int64 seconds) rather than the timestamp itself,
-because Hopsworks primary keys must be a simple scalar. `time` is the event
-time, which powers point-in-time joins. With Delta time travel, inserting a row
-whose `unix_ts` already exists UPSERTS it, so re-running the hourly job over
-overlapping hours is safe and idempotent.
-
-Reliability
------------
-Three separate transports, each with its own failure mode and its own retry:
-
-  feature writes  delta-rs opens a direct HDFS RPC connection, which drops
-                  intermittently from outside the Hopsworks network. Chunking
-                  keeps each session short; upsert makes every retry idempotent.
-  feature reads   the Arrow Flight Query Service returns transient gRPC
-                  UNAVAILABLE ("Socket closed") under load. Reads are pure, so
-                  retrying is free.
-  model uploads   the NDB metadata cluster intermittently returns HTTP 500
-                  ("Tuple did not exist") mid-upload. create_model is inside
-                  the retry because a half-created version cannot be re-saved.
-
-None of these retries hide a real error: schema mismatches and duplicate keys
-still fail immediately, and exhausted registration retries fail the job.
-
-Setup
------
-    pip install hopsworks deltalake
-    export HOPSWORKS_API_KEY="..."      # never commit this
-
-Usage
------
-    python -m src.data.feature_store --check
-    python -m src.data.feature_store --backfill
-    python -m src.data.feature_store --backfill --only 72     # resume one group
-    python -m src.data.feature_store --incremental            # hourly job
-    python -m src.data.feature_store --register-models
-"""
 
 from __future__ import annotations
 
@@ -66,8 +16,7 @@ RAW_FG = "aqi_raw_hourly"
 FEAT_FG = "aqi_features_h{h}"
 FG_VERSION = 1
 
-# Delta gives upsert-on-primary-key. Override to "NONE" only if the delta
-# library cannot be installed - see the note in do_incremental().
+
 TIME_TRAVEL_FORMAT = os.environ.get("HOPSWORKS_TT_FORMAT", "DELTA")
 
 # write tuning
@@ -87,17 +36,7 @@ REGISTER_BACKOFF_S = 10
 # CAMS corrections; upsert makes the duplication harmless.
 INCREMENTAL_LOOKBACK_H = 72
 
-# Hopsworks/Hive type -> pandas dtype, for aligning a frame to an EXISTING
-# feature group's schema.
-#
-# Why this is read from the server rather than assumed: pandas infers dtypes
-# from whatever slice of data it is handed. The original backfill saw four
-# years including NaNs, so some columns landed as float64 and others as int;
-# a later 60-day window with no NaNs in the same column infers a different
-# type, and Hopsworks rejects the write. Guessing the rule from column names
-# was also wrong - relative_humidity_2m is stored as bigint while ozone is
-# double, which no naming convention predicts. The group itself is the only
-# reliable source of truth for its own schema.
+
 HOPSWORKS_DTYPES = {
     "double": "float64",
     "float": "float32",
@@ -108,8 +47,6 @@ HOPSWORKS_DTYPES = {
     "boolean": "bool",
 }
 
-# Used only when a feature group does not exist yet and there is no schema to
-# read: these are the columns that should be created as integers.
 NEW_GROUP_INT_LIKE = (
     "hour_local", "dayofweek", "month", "dayofyear", "horizon",
     "hour_f", "month_f", "dayofweek_f", "is_weekend_f",
@@ -131,7 +68,7 @@ def _align_to_schema(fg, frame: pd.DataFrame, label: str) -> pd.DataFrame:
     """
     try:
         features = list(fg.features or [])
-    except Exception:                                         # noqa: BLE001
+    except Exception:                                        
         features = []
     if not features:
         return frame
@@ -146,8 +83,7 @@ def _align_to_schema(fg, frame: pd.DataFrame, label: str) -> pd.DataFrame:
         if str(out[name].dtype) == target:
             continue
         if target.startswith("int") and out[name].isna().any():
-            # casting NaN to int would raise; let the write fail with a clear
-            # server-side message rather than corrupting the column here
+            
             print(f"    {label}: {name} has nulls but schema wants {target}, leaving as-is")
             continue
         out[name] = out[name].astype(target)
@@ -159,9 +95,7 @@ def _align_to_schema(fg, frame: pd.DataFrame, label: str) -> pd.DataFrame:
     return out
 
 
-# --------------------------------------------------------------------------- #
-# connection
-# --------------------------------------------------------------------------- #
+
 def login():
     """Connect using HOPSWORKS_API_KEY. Identical locally and in CI."""
     import hopsworks
@@ -180,9 +114,7 @@ def get_fs():
     return login().get_feature_store()
 
 
-# --------------------------------------------------------------------------- #
-# frame preparation
-# --------------------------------------------------------------------------- #
+
 def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Normalise a time-indexed or time-columned frame for Hopsworks.
 
@@ -195,11 +127,7 @@ def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
     """
     out = df.copy()
 
-    # If `time` is the index, promote it to a column. If it is ALREADY a
-    # column, discard the index entirely. A boolean-filtered frame carries a
-    # plain Index rather than a RangeIndex under pandas 2.x, and calling
-    # reset_index() on it injects a spurious `index` column that Hopsworks
-    # rejects with "index (type: 'bigint') does not exist in feature group".
+   
     if "time" in out.columns:
         out = out.reset_index(drop=True)
     else:
@@ -213,8 +141,7 @@ def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
     out["time"] = ts.dt.tz_localize(None)
     out.columns = [c.lower() for c in out.columns]
 
-    # Baseline dtypes for a NEW group. An existing group's real schema is
-    # applied afterwards by _align_to_schema, which overrides these.
+    
     for c in out.columns:
         if c == "time":
             continue
@@ -225,8 +152,7 @@ def to_hopsworks_frame(df: pd.DataFrame) -> pd.DataFrame:
             out[c] = out[c].astype("float64")
 
     if "index" in out.columns:
-        # belt and braces: nothing above should produce this, but a silent
-        # schema mismatch costs a full CI cycle to diagnose
+        
         raise ValueError("stray 'index' column - would break the feature group schema")
 
     dupes = int(out["unix_ts"].duplicated().sum())
@@ -247,9 +173,7 @@ def _fg(fs, name: str, description: str):
     )
 
 
-# --------------------------------------------------------------------------- #
-# writes
-# --------------------------------------------------------------------------- #
+
 def _insert_chunked(fg, frame: pd.DataFrame, label: str) -> None:
     """Write in chunks, retrying each with exponential backoff.
 
@@ -299,9 +223,7 @@ def write_features(fs, h: int, df: pd.DataFrame) -> None:
     _insert_chunked(fg, frame, name)
 
 
-# --------------------------------------------------------------------------- #
-# reads
-# --------------------------------------------------------------------------- #
+
 def _read_with_retry(fg, label: str) -> pd.DataFrame:
     """Read a feature group, retrying transient Query Service failures.
 
@@ -362,9 +284,7 @@ def latest_timestamp(fs, name: str):
     return pd.Timestamp(int(mx), unit="s", tz="UTC") if pd.notna(mx) else None
 
 
-# --------------------------------------------------------------------------- #
-# model registry
-# --------------------------------------------------------------------------- #
+
 def register_models(project) -> None:
     """Push the six artifacts (3 point heads, 3 alert heads) with their metrics.
 
@@ -485,11 +405,7 @@ def do_incremental(fs) -> None:
     print(f"  {RAW_FG}: frontier {last_raw}")
 
     if last_raw is None:
-        # Only reachable when the group genuinely does not exist - a failed
-        # read raises inside latest_timestamp rather than reporting None.
-        # Even so, refuse to "backfill" from a short local window: the hourly
-        # pipeline holds only FETCH_DAYS of data, and writing that as a
-        # backfill would look successful while storing almost nothing.
+       
         clean_rows = len(pd.read_parquet(cfg.DATA_INTERIM / "clean.parquet"))
         if clean_rows < 24 * 365:
             raise RuntimeError(

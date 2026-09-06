@@ -1,42 +1,3 @@
-"""
-Streamlit dashboard - the public face of the forecasting system.
-
-    streamlit run src/app/dashboard.py
-
-Data sources:
-  reports/latest_forecast.json   written hourly by pipelines/hourly.py
-  reports/history/*.json         one snapshot per hourly run, for the backtest
-  Open-Meteo air-quality API     live pollutants + observed AQI
-  Open-Meteo forecast API        live weather conditions
-
-No Hopsworks dependency: everything is either committed by the hourly workflow
-or fetchable without credentials, so the app deploys with no secrets.
-
-Design notes
-------------
-The layout is a bulletin rather than a monitoring console. The audience is a
-person deciding whether to go outside, not an operator watching a system.
-
-Two live themes carry state before any number is read:
-
-  SKY     the masthead glyph, condition word and wash behind the conditions
-          strip are derived from cloud cover, rain, wind and local hour, so
-          the page looks like the weather outside. Smog gets its own state
-          when the air is bad and the sky is clear.
-  AIR     the AQI block carries a particulate texture whose density scales
-          with the reading. A clean day is nearly bare; a hazardous one is
-          dense. The texture is information, not decoration.
-
-Category colours follow the US AQI standard's semantics, but each has a light
-tint for fills and a deeper ink for text. The official values (#00e400,
-#ffff00) are specified for small badges and glare across large areas. Keeping
-the hue keeps the recognition; adjusting the value makes it readable.
-
-Charts strip Plotly's defaults deliberately: no gridlines except faint
-horizontals, no axis spines, no legend box, direct labelling on the series
-instead of a key. Nothing should read as a notebook plot.
-"""
-
 from __future__ import annotations
 
 import json
@@ -62,14 +23,13 @@ LAT, LON = 33.6844, 73.0479
 LOCAL_TZ = "Asia/Karachi"
 ALERT_THRESHOLD = 150
 
-# ---------------------------------------------------------------- palette
+
 PAPER = "#F8F9F8"
 INK = "#22252B"
 MUTED = "#6E7580"
 RULE = "#E3E6E3"
 FAINT = "#EFF1EF"
 
-# US AQI categories: (upper bound, label, tint for fills, ink for text, advice)
 BANDS = [
     (50, "Good", "#E9F2EC", "#2F7D52",
      "Air quality is fine. No precautions needed."),
@@ -95,10 +55,6 @@ def band(aqi: float):
     return BANDS[-1][1:]
 
 
-# Concentration at which each pollutant starts to matter for health, in the
-# units Open-Meteo returns. Used only to scale the load bars and identify which
-# pollutant is currently binding. This is NOT a reproduction of the EPA
-# sub-index arithmetic and is labelled as a relative load, not an AQI.
 POLLUTANTS = [
     ("pm2_5", "PM2.5", "µg/m³", 35.4),
     ("pm10", "PM10", "µg/m³", 154.0),
@@ -120,13 +76,7 @@ WEATHER_FIELDS = [
 COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
 
-# Plain-language labels for raw feature names.
-#
-# Per-prediction labels arrive already humanised in the forecast JSON, written
-# by src/models/predict.py. This local copy is only for the global-importance
-# chart, which reads a raw CSV. It is duplicated rather than imported because
-# the dashboard's slim requirements exclude scikit-learn, so importing the
-# prediction module fails on Streamlit Cloud.
+
 _SHORT = {
     "us_aqi": "AQI now",
     "us_aqi_same_hour_yesterday": "AQI at this hour yesterday",
@@ -180,9 +130,9 @@ def humanise(feat: str) -> str:
     return f.replace("_", " ") + suffix
 
 
-# --------------------------------------------------------------------------- #
+
 # data
-# --------------------------------------------------------------------------- #
+
 @st.cache_data(ttl=300)
 def load_forecast() -> dict | None:
     return json.loads(FORECAST.read_text()) if FORECAST.exists() else None
@@ -196,7 +146,7 @@ def load_history() -> pd.DataFrame:
     for p in sorted(HISTORY.glob("forecast_*.json")):
         try:
             d = json.loads(p.read_text())
-        except Exception:                                     # noqa: BLE001
+        except Exception:                                     
             continue
         for f in d.get("forecast", []):
             rows.append({
@@ -249,7 +199,7 @@ def load_model_meta() -> list[dict]:
     for p in sorted(MODELS.glob("model_h*_meta.json")):
         try:
             out.append(json.loads(p.read_text()))
-        except Exception:                                     # noqa: BLE001
+        except Exception:                                     
             continue
     return out
 
@@ -266,9 +216,9 @@ def local(ts) -> pd.Timestamp:
     return pd.Timestamp(ts).tz_convert(LOCAL_TZ)
 
 
-# --------------------------------------------------------------------------- #
+
 # live sky theme
-# --------------------------------------------------------------------------- #
+
 def sky_state(wrow, aqi: float, hour: int) -> dict:
     """Classify the sky from live weather, and pick its visual treatment.
 
@@ -318,7 +268,7 @@ def sky_state(wrow, aqi: float, hour: int) -> dict:
     accent, top, mid, bottom = themes[key]
     return {
         "key": key, "word": word, "accent": accent, "night": night,
-        # the whole page, not a strip
+        
         "page": f"linear-gradient(180deg,{top} 0%,{mid} 34%,{bottom} 72%,{PAPER} 100%)",
         "wash": f"linear-gradient(160deg,{top} 0%,{mid} 62%,{bottom} 100%)",
         "panel": bottom,
@@ -402,8 +352,7 @@ def ambient(key: str, accent: str) -> str:
     parts = []
 
     if key == "clear":
-        # Deliberately strong: a weak glow reads as a rendering artefact rather
-        # than as sunlight. This should be unmistakable at a glance.
+        
         parts.append(f'<div class="sunglow" style="background:radial-gradient('
                      f'circle,{accent}FF 0%,{accent}CC 14%,{accent}77 32%,'
                      f'{accent}33 52%,transparent 74%)"></div>')
@@ -512,9 +461,7 @@ def particulates(aqi: float, colour: str, w: int = 300, h: int = 210) -> str:
     single reading and visibly changes when the air does. A Good day shows
     roughly 18 specks; a Hazardous one several hundred.
     """
-    # Curve tuned to this city's observed range (14 to 218, median 106): a Good
-    # day is almost bare, a typical day is visibly speckled, and the worst
-    # readings on record are dense without going solid black.
+    
     n = int(min(420, 6 + (max(aqi, 0) / 100.0) ** 2.0 * 105))
     seed = int(aqi * 977) or 1
     dots = []
@@ -607,17 +554,13 @@ def style_chart(fig: go.Figure, height: int = 340) -> go.Figure:
     return fig
 
 
-# --------------------------------------------------------------------------- #
 # page
-# --------------------------------------------------------------------------- #
+
 st.set_page_config(page_title="Islamabad air quality", page_icon="◐",
                    layout="wide", initial_sidebar_state="collapsed")
 
 
-# ---------------------------------------------------------------- pearl cursor
-# Keeps the dashboard's original visual design intact. The normal system cursor
-# is hidden and replaced with a small, multi-colour cluster of pearl-like beads
-# that smoothly follows mouse movement.
+
 def inject_pearl_cluster_cursor():
     components.html(
         """
@@ -804,11 +747,11 @@ fc = load_forecast()
 aq_err = wx_err = None
 try:
     aq = fetch_air_quality()
-except Exception as exc:                                      # noqa: BLE001
+except Exception as exc:                                      
     aq, aq_err = pd.DataFrame(), exc
 try:
     wx = fetch_weather()
-except Exception as exc:                                      # noqa: BLE001
+except Exception as exc:                                      
     wx, wx_err = pd.DataFrame(), exc
 
 wrow = latest_row(wx)
@@ -1045,7 +988,7 @@ html, body, [class*="css"], .stMarkdown, p, div, span, li, td, th {{
 </style>
 """, unsafe_allow_html=True)
 
-# The atmospheric layer sits behind everything, fixed to the viewport.
+
 st.markdown(ambient(sky["key"], sky["accent"]), unsafe_allow_html=True)
 
 if fc is None:
@@ -1077,7 +1020,7 @@ st.markdown(f"""
        forecast issued {issued:%H:%M} PKT</div>
 </div>""", unsafe_allow_html=True)
 
-# ------------------------------------------------------------------- reading
+
 spark = ""
 if not aq.empty and "us_aqi" in aq:
     recent = aq["us_aqi"].dropna().tail(48)
@@ -1139,7 +1082,7 @@ if alerts:
 for w in fc.get("warnings", []):
     st.markdown(f"<div class='note'>{w}</div>", unsafe_allow_html=True)
 
-# ------------------------------------------------------------------- outlook
+# outlook
 st.markdown("<div class='sec'>Three-day outlook</div>", unsafe_allow_html=True)
 
 hi_y = max([f["aqi_upper_q90"] for f in fc["forecast"]] + [fc["current_aqi"]]) + 35
@@ -1206,7 +1149,7 @@ for f in fc["forecast"]:
         f'</div>')
 st.markdown(f'<div class="days">{"".join(cards)}</div>', unsafe_allow_html=True)
 
-# ---------------------------------------------------------------- conditions
+# conditions
 st.markdown("<div class='sec'>Conditions now</div>", unsafe_allow_html=True)
 
 if wrow is None:
@@ -1230,13 +1173,13 @@ else:
                 "most cumulatively: two or three days of ventilation clears the air "
                 "far more than one windy hour.</div>", unsafe_allow_html=True)
 
-# ------------------------------------------------------------------ assistant
+# assistant
 st.markdown("<div class='sec'>Ask about going outside</div>",
             unsafe_allow_html=True)
 
 try:
     from src.app import assistant as bot
-except Exception:                                             # noqa: BLE001
+except Exception:                                             
     import importlib.util as _il
     _spec = _il.spec_from_file_location(
         "assistant", Path(__file__).parent / "assistant.py")
@@ -1255,8 +1198,6 @@ else:
     if "chat" not in st.session_state:
         st.session_state.chat = []
 
-    # ---- the panel: header, transcript, all as one markup block so the
-    #      bubbles and the 10P avatar are entirely under our control
     if st.session_state.chat:
         body = "".join(
             (f'<div class="msg bot"><div class="ava">{pearl_logo()}</div>'
@@ -1282,7 +1223,7 @@ else:
   <div class="chatbody">{body}</div>
 </div>""", unsafe_allow_html=True)
 
-    # ---- input, inside a form so Enter submits and the box clears itself
+    
     with st.form("askform", clear_on_submit=True):
         c1, c2 = st.columns([6, 1])
         with c1:
@@ -1303,8 +1244,7 @@ else:
 
     if question:
         st.session_state.chat.append({"role": "user", "content": question})
-        # Context is rebuilt every turn from the objects this page already
-        # rendered, so the assistant cannot drift from what the user is seeing.
+        
         hist_series = (aq["us_aqi"] if not aq.empty and "us_aqi" in aq else None)
         context = bot.build_context(fc, arow, wrow, sky, hist_series)
         try:
@@ -1330,7 +1270,7 @@ else:
         st.session_state.chat = []
         st.rerun()
 
-# ------------------------------------------------------------------ accuracy
+# accuracy
 st.markdown("<div class='sec'>How accurate has this been?</div>",
             unsafe_allow_html=True)
 
@@ -1392,7 +1332,7 @@ else:
                 f"{local(hist['issued_at'].max()):%d %B}.</div>",
                 unsafe_allow_html=True)
 
-# --------------------------------------------------------- why this forecast
+# why this forecast
 explained = [f for f in fc["forecast"] if (f.get("explanation") or {}).get("drivers")]
 
 if explained:
@@ -1403,7 +1343,7 @@ if explained:
     for tab, f in zip(tabs, explained):
         with tab:
             ex = f["explanation"]
-            drivers = ex["drivers"][::-1]          # largest at the top of the chart
+            drivers = ex["drivers"][::-1]          
             base = ex["baseline"]
 
             bars = go.Figure(go.Bar(
@@ -1439,7 +1379,7 @@ if explained:
         "recalculated every hour alongside the forecast itself.</div>",
         unsafe_allow_html=True)
 
-# --------------------------------------------------------------- how it works
+# how it works
 st.markdown("<div class='sec'>How the forecast is made</div>",
             unsafe_allow_html=True)
 
@@ -1483,7 +1423,7 @@ if True:
                             config={"displayModeBar": False})
             st.markdown("<div class='subtle'>Averaged over the whole test period "
                         "at the three-day horizon.</div>", unsafe_allow_html=True)
-        except Exception:                                     # noqa: BLE001
+        except Exception:                                     
             pass
 
 errs = [e for e in (aq_err, wx_err) if e is not None]

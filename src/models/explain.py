@@ -1,31 +1,3 @@
-"""
-Step 6 - Explainability with SHAP.
-
-Produces four things, in order of how much they matter for the report:
-
-  1. Feature-GROUP importance by horizon.
-     Does the model shift from recent-state features toward calendar and
-     forecast-weather features as the horizon grows? The EDA predicted it
-     should. If it does not, the explanation we have been giving for the gentle
-     day1 -> day3 degradation is wrong and needs rewriting.
-
-  2. Global importance + beeswarm per horizon.
-     Which individual features carry the model, and in which direction.
-
-  3. Seasonal contrast (winter vs summer).
-     EDA Q3 found winter AQI is PM2.5-driven and summer is ozone-driven. SHAP
-     should show the same split. This is a genuine falsifiable check, not a
-     decoration.
-
-  4. A worked single-prediction waterfall for a high-AQI hour, which doubles as
-     the "why this forecast" panel in the dashboard.
-
-Run:
-    pip install shap
-    python -m src.models.explain
-    python -m src.models.explain --horizons 72 --sample 3000
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,7 +20,7 @@ FIG_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS = cfg.ROOT / "reports"
 
 
-# --------------------------------------------------------------------------- #
+
 def feature_group(col: str) -> str:
     """Map a feature name to one of four availability/semantic families."""
     if col.endswith("_t"):
@@ -82,7 +54,7 @@ def get_explainer(model, X_bg: pd.DataFrame):
         )
     try:
         return shap.TreeExplainer(est), est, X_bg, "tree"
-    except Exception as exc:                    # noqa: BLE001
+    except Exception as exc:                   
         print(f"    TreeExplainer unavailable ({type(exc).__name__}); using Permutation")
         return (shap.PermutationExplainer(est.predict, X_bg.iloc[:200]),
                 est, X_bg, "permutation")
@@ -94,7 +66,6 @@ def transform_for(model, X: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
-# --------------------------------------------------------------------------- #
 def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
     print(f"\n{'=' * 70}\nhorizon {h}h")
     model, X, y = load_model_and_data(h)
@@ -109,13 +80,13 @@ def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
     sv = explainer(Xt) if kind != "tree" else explainer(Xt, check_additivity=False)
     vals = sv.values if hasattr(sv, "values") else np.asarray(sv)
 
-    # ---------------------------------------------------------------- global
+  
     imp = pd.Series(np.abs(vals).mean(0), index=X.columns).sort_values(ascending=False)
     print("\n  top 15 features (mean |SHAP|):")
     for name, v in imp.head(15).items():
         print(f"    {name:<38} {v:6.3f}   [{feature_group(name)}]")
 
-    # ---------------------------------------------------------------- groups
+  
     groups = pd.Series({c: feature_group(c) for c in X.columns})
     grp = imp.groupby(groups).sum()
     grp_pct = (grp / grp.sum() * 100).sort_values(ascending=False)
@@ -123,7 +94,7 @@ def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
     for name, v in grp_pct.items():
         print(f"    {name:<20} {v:5.1f}%   ({int((groups == name).sum())} features)")
 
-    # ---------------------------------------------------------------- plots
+    
     shap.summary_plot(vals, Xt, max_display=20, show=False)
     plt.title(f"SHAP summary - horizon {h}h")
     plt.tight_layout()
@@ -138,7 +109,7 @@ def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
     fig.savefig(FIG_DIR / f"shap_top20_h{h}.png", dpi=140)
     plt.close(fig)
 
-    # dependence plots for the three strongest features
+    
     for feat in imp.head(3).index:
         shap.dependence_plot(feat, vals, Xt, show=False)
         plt.tight_layout()
@@ -146,7 +117,7 @@ def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
         plt.savefig(FIG_DIR / f"shap_dep_h{h}_{safe}.png", dpi=140)
         plt.close()
 
-    # ---------------------------------------------------------------- seasonal
+    
     month = Xs.index.tz_convert(cfg.LOCAL_TZ).month
     winter = np.isin(month, [12, 1, 2])
     summer = np.isin(month, [6, 7, 8])
@@ -165,7 +136,7 @@ def run_horizon(h: int, n_sample: int, rng: np.random.Generator) -> dict:
               f"summer {seasonal.loc[o3, 'summer'].sum():6.3f}")
         print("    (EDA predicted PM2.5 dominant in winter, ozone rising in summer)")
 
-    # ---------------------------------------------------------------- waterfall
+    
     worst = ys.idxmax()
     wi = list(Xs.index).index(worst)
     base = float(np.ravel(sv.base_values)[wi]) if hasattr(sv, "base_values") else float(ys.mean())

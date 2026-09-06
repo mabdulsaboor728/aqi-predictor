@@ -8,10 +8,9 @@ name: hourly
 
 on:
   schedule:
-    # 7 past the hour: Open-Meteo publishes on the hour, and GitHub's scheduler
-    # is queued rather than exact, so a few minutes of slack avoids racing it.
+   
     - cron: "7 * * * *"
-  workflow_dispatch:        # manual trigger
+  workflow_dispatch:       
 
 # a slow run must never overlap the next hour's
 concurrency:
@@ -19,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write           # needed to commit the forecast JSON
+  contents: write           
 
 jobs:
   forecast:

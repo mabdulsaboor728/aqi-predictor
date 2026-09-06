@@ -6,15 +6,12 @@ name: daily-retrain
 # (both heads), and registers the results. No "only if better" gate: inference
 # selects the best registered version by metric, so a worse retrain is recorded
 # but never served. The comparison is printed in the log either way.
-#
-# Model registration retries internally - the Hopsworks metadata cluster
-# intermittently returns HTTP 500 mid-upload, which previously left the
-# registry half-populated.
+
 
 on:
   schedule:
     # 02:40 UTC = 07:40 PKT. After the overnight hourly runs have landed data,
-    # and off the top of the hour where GitHub's scheduler is busiest.
+    
     - cron: "40 2 * * *"
   workflow_dispatch:
 
@@ -28,7 +25,7 @@ permissions:
 jobs:
   retrain:
     runs-on: ubuntu-latest
-    timeout-minutes: 90        # RandomForest across 3 horizons x 4 folds is slow
+    timeout-minutes: 90        
 
     steps:
       - uses: actions/checkout@v4

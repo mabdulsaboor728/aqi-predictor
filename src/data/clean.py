@@ -1,28 +1,4 @@
-"""
-Step 2 - Cleaning.
 
-Takes data/raw/merged_raw.parquet and produces data/interim/clean.parquet.
-
-Deliberately conservative: this stage only removes or repairs what is
-defensible. No feature engineering happens here (that is step 4), and nothing
-here is allowed to look forward in time.
-
-Decisions made, and why:
-  * boundary_layer_height dropped  - 51% missing (archive only covers Sep 2024+)
-                                     and its correlation with the target was
-                                     0.003, so keeping it would have cost half
-                                     the training data for nothing
-  * leading rows trimmed           - one contiguous us_aqi gap at series start
-  * short gaps forward-filled      - strictly past-only, capped at MAX_GAP_HOURS
-  * physical clipping              - negatives on strictly-positive quantities
-
-The functions here are pure and take a frame, so pipelines/hourly.py can reuse
-the identical cleaning steps on an in-memory frame in CI. Any divergence
-between the two paths would be training/serving skew.
-
-Run:
-    python -m src.data.clean
-"""
 
 from __future__ import annotations
 
@@ -30,10 +6,10 @@ import pandas as pd
 
 from src import config as cfg
 
-DROP_COLS = ["boundary_layer_height"]      # 51% missing - see module docstring
-MAX_GAP_HOURS = 3                          # anything longer is left as NaN
+DROP_COLS = ["boundary_layer_height"]     
+MAX_GAP_HOURS = 3                          
 
-# columns that cannot physically be negative
+
 NON_NEGATIVE = [
     "pm10", "pm2_5", "carbon_monoxide", "nitrogen_dioxide", "sulphur_dioxide",
     "ozone", "dust", "aerosol_optical_depth", "us_aqi",

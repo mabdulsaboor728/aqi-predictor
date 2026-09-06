@@ -35,6 +35,11 @@ forecast detects only 48% of Unhealthy hours at 72 hours ahead; a
 90th-percentile quantile model detects 92%. These are different objectives and
 one model cannot serve both.
 
+The public surface is a Streamlit dashboard that themes itself to live
+conditions, scores its own past forecasts against what actually happened,
+explains each prediction with SHAP contributions computed at prediction time,
+and carries a scope-limited health assistant grounded in the same live data.
+
 **Three findings shaped the work more than any modelling choice:**
 
 1. The US AQI target is constructed from *rolling averages* of its component
@@ -531,11 +536,19 @@ the effect worsens with horizon. CV bias on hours above AQI 150:
 | +48h | −25.31 |
 | +72h | −27.60 |
 
-These figures are *conditional* on the target exceeding AQI 150. Overall bias
-across all holdout hours is near zero at every horizon — the model is not
-systematically low, it is systematically low **in the tail**. That distinction
+These figures are **conditional** on the target exceeding AQI 150. Overall bias
+across all holdout hours is near zero at every horizon. The model is not
+systematically low; it is systematically low *in the tail*. That distinction
 matters: an unconditional bias of −28 would be a calibration failure, whereas a
 tail-conditional one is the expected cost of minimising squared error.
+
+This is textbook squared-error behaviour: RMSE rewards hedging toward the mean.
+It is also precisely the wrong behaviour for a system whose stated purpose
+includes hazardous-level warnings. The practical cost is a category error on
+exactly the days that matter: an actual reading of 175 (Unhealthy) is forecast
+at roughly 147, which displays as Unhealthy for sensitive groups. The alert
+head exists because the displayed number crosses a health boundary in the wrong
+direction.
 
 Detection performance at threshold AQI > 150, h=72:
 
@@ -775,16 +788,80 @@ runs.
 
 ### 9.5 Dashboard
 
-Streamlit, deployed on Community Cloud, reading only committed JSON and the
-public Open-Meteo API — no credentials required. Sections: current AQI with the
-standard category colour and corresponding health guidance; three-day forecast
-with the 90th-percentile band; hazardous-air alert banner; **forecast-versus-
-actual accuracy** scored from the accumulating history log; and a plain-language
-explanation of how the forecast is produced.
+Streamlit, deployed on Community Cloud. It reads only committed JSON and the
+public Open-Meteo API, so it needs no Hopsworks credentials and deploys from a
+four-package requirement file. The heavier development dependencies live in a
+separate `requirements-dev.txt`, because Hopsworks pulls in `confluent-kafka`,
+which needs a C library absent from the Streamlit runner.
 
-The accuracy panel is the part that distinguishes this from a dashboard that
-only asserts its own quality: it scores every past forecast against what
-actually happened.
+Sections, in order: the current reading with health guidance and live pollutant
+loads; a three-day outlook with the 90th-percentile band; current weather; the
+assistant (Section 9.6); forecast-versus-actual accuracy; a per-prediction
+explanation; and the model comparison.
+
+**Two panels do work a typical dashboard does not.**
+
+*Forecast-versus-actual accuracy* scores every past forecast in
+`reports/history/` against what was subsequently observed, reporting MAE and
+bias per horizon. Most dashboards assert their own quality; this one shows it,
+including when it is wrong.
+
+*Why this forecast* renders SHAP contributions for the current prediction as a
+diverging bar chart, one tab per horizon. These are computed in `predict.py` at
+prediction time rather than in the dashboard, because the model and feature row
+are already loaded there. That keeps the app dependency-light and guarantees
+the explanation always corresponds to the number it explains.
+
+**Design.** The layout is a bulletin rather than a monitoring console: the
+audience is a person deciding whether to go outside, not an operator watching a
+system. Two live themes carry state before any number is read. The *sky* theme
+derives a condition from cloud cover, rain, wind and local hour, and drives the
+page background, a hand-drawn glyph and an animated ambient layer: drifting
+cloud, falling rain, blowing streaks, a breathing sun, twinkling stars or
+rolling haze. Smog is a distinct state, because showing a cheerful sun on a day
+when the air is dangerous would be actively misleading. The *air* theme gives
+the reading block a particulate texture whose density scales with the AQI, so a
+clean day is nearly bare and a hazardous one is dense.
+
+Category colours keep the US AQI standard's hues for recognition but use a
+lighter tint for fills and a deeper ink for text; the official values are
+specified for small badges and glare across large areas. Charts are stripped of
+Plotly's defaults so nothing reads as a notebook plot. All motion is suppressed
+under `prefers-reduced-motion`.
+
+### 9.6 Air quality assistant
+
+A narrow-scope chat helper answering one kind of question: given the air
+quality and weather right now, and what the person says about themselves, is it
+sensible to go outside?
+
+**Grounding.** Every request carries a context block built from the same
+objects the page renders: current AQI and category, measured pollutant
+concentrations with their relative loads, current weather, the sky state, this
+system's three-day forecast including the alert-head upper bound, the current
+wall-clock time, and the typical daily AQI rhythm computed from the past week
+of observations. The model is instructed to treat that block as the only
+authoritative source and never to substitute general knowledge about
+Islamabad's air. This is why it can answer "can I run this evening" from live
+data rather than reciting averages, and why the dashboard and the assistant
+cannot disagree about conditions.
+
+Forecast points that have already passed are marked as such, and the prompt
+states that exactly three forecast points exist with nothing between them. Both
+guards were added after the assistant recommended a time earlier the same day:
+it had no idea what "now" was, and with only three points it invented a fourth.
+
+**Safety.** This gives general public-health guidance of the kind an air
+quality bulletin carries; it is not a clinician. Three rules are enforced in
+the prompt and stated in the interface. Severe symptoms are routed straight to
+emergency care with no air-quality discussion attached, because that discussion
+would only delay someone. It never names a condition the person has not named,
+and never comments on medication. Persistent or worsening symptoms get a
+recommendation to see a doctor. Scope is limited to air quality, weather and
+outdoor activity, with anything else politely redirected.
+
+The API key is read from Streamlit secrets with an environment-variable
+fallback, and is never committed.
 
 ---
 
@@ -955,7 +1032,27 @@ performance above AQI 200 cannot be meaningfully assessed from this data, and
 the reported recall figures apply to the AQI > 150 threshold where sample size
 is adequate.
 
-### 11.6 Single location
+### 11.6 The assistant is a language model
+
+The chat helper is grounded in live data and scope-limited, but it is still a
+language model and can misread a question or phrase guidance poorly. It is
+positioned as everyday guidance rather than medical advice, routes severe
+symptoms to emergency care, and states its own limits in the interface. It has
+not been formally evaluated against clinical guidelines, which would be
+necessary before presenting it as anything more than a convenience layer over
+the numbers already on the page.
+
+### 11.7 Hopsworks free-tier dependency
+
+Daily retraining reads the full feature groups from Hopsworks. If that account
+lapses, retraining stops. Nothing user-facing does: the hourly job sources
+history from Open-Meteo and treats the feature-store push as non-fatal,
+inference falls back to model files committed to the repository, and the
+dashboard has no Hopsworks dependency at all. Forecasts would continue to
+publish with a frozen model until the account is restored or the daily job is
+pointed at a rebuilt dataset.
+
+### 11.8 Single location
 
 All results are for one grid cell. The pipeline is coordinate-parameterised and
 would run elsewhere, but the feature design — particularly the sub-index window
@@ -999,13 +1096,15 @@ aqi-predictor/
 │   ├── data/              fetch_openmeteo.py, clean.py, feature_store.py
 │   ├── features/          build_features.py
 │   ├── models/            train.py, predict.py, explain.py, lstm.py
-│   └── app/               dashboard.py
+│   └── app/               dashboard.py, assistant.py
 ├── models/                6 artifacts + metadata
-└── reports/               metrics, figures, forecast history
+├── reports/               metrics, figures, forecast history
+├── requirements.txt       dashboard runtime (what Streamlit Cloud installs)
+└── requirements-dev.txt   full pipeline, training and CI
 ```
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt      # includes requirements.txt
 export HOPSWORKS_API_KEY="..."
 
 python -m src.data.fetch_openmeteo        # backfill from Aug 2022
@@ -1018,6 +1117,16 @@ python -m src.data.feature_store --backfill --register-models
 python -m src.models.predict              # live forecast
 streamlit run src/app/dashboard.py
 ```
+
+The dashboard runs on `requirements.txt` alone (four packages) and needs no
+Hopsworks credentials. For the assistant, add an OpenAI key to
+`.streamlit/secrets.toml` locally, or to the Secrets panel on Streamlit Cloud:
+
+```toml
+OPENAI_API_KEY = "sk-..."
+```
+
+Both secrets files are gitignored.
 
 Deep-learning comparison (requires `torch`):
 
@@ -1042,3 +1151,9 @@ model was missing three-quarters of the days it most needed to catch.
 
 Each of those came from asking what the numbers meant rather than whether they
 had improved.
+
+The same instinct shaped the interface. The dashboard shows how its own past
+forecasts scored rather than only asserting accuracy, and the assistant is
+grounded in the system's live readings rather than in a language model's
+recollection of Islamabad. In both cases the harder option was the one that
+could be checked.

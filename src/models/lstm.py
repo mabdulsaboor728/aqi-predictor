@@ -1,40 +1,4 @@
-"""
-Deep-learning comparison arm: GRU / LSTM sequence models.
 
-Architecture
-------------
-Two encoders, matching the same availability contract as the tabular pipeline:
-
-    history encoder   past SEQ_LEN hours of pollutants + weather + AQI,
-                      ending AT t. Never extends past t.
-    future encoder    weather forecast for t+1 .. t+h. Legitimately available
-                      when the forecast is issued.
-
-    [h_hist ; h_future ; calendar(t+h)] -> MLP -> prediction
-
-Residual mode (default ON)
---------------------------
-The network predicts (aqi[t+h] - aqi[t]) rather than the level. Neural nets,
-unlike Ridge, have no free way to express y ~= x, so making persistence the
-anchor and learning only the correction usually converges much faster. Use
---no-residual to test the level formulation.
-
-Protocol
---------
-Identical splits to src/models/train.py so numbers are directly comparable:
-  holdout   : from 2025-09-01, scored once
-  validation: last VAL_FRAC of dev, separated from train by a purge gap of
-              (horizon + 24) hours, used for early stopping only
-  scaling   : StandardScaler fit on the TRAIN slice only
-
-Usage
------
-    pip install torch
-    python -m src.models.train_seq                      # GRU, all horizons
-    python -m src.models.train_seq --arch lstm
-    python -m src.models.train_seq --horizons 72 --epochs 60
-    python -m src.models.train_seq --no-residual
-"""
 
 from __future__ import annotations
 
@@ -50,14 +14,14 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from src import config as cfg
 
-# --------------------------------------------------------------------------- #
-SEQ_LEN = 168          # one week of history
+
+SEQ_LEN = 168         
 HOLDOUT_START = "2025-09-01"
 VAL_FRAC = 0.15
 ALERT_THRESHOLD = 150
 SEED = 42
 
-# history channels: everything observable at t
+
 HIST_VARS = [
     "us_aqi", "pm2_5", "pm10", "ozone", "nitrogen_dioxide", "sulphur_dioxide",
     "carbon_monoxide", "dust", "aerosol_optical_depth",
@@ -66,7 +30,7 @@ HIST_VARS = [
     "shortwave_radiation",
 ]
 
-# future channels: weather only - no pollutant forecast exists
+
 FUT_VARS = [
     "temperature_2m", "relative_humidity_2m", "dew_point_2m", "precipitation",
     "surface_pressure", "cloud_cover", "wind_speed_10m", "wind_gusts_10m",
@@ -80,14 +44,12 @@ REPORTS.mkdir(parents=True, exist_ok=True)
 def device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
-    if torch.backends.mps.is_available():          # Apple Silicon
+    if torch.backends.mps.is_available():          
         return torch.device("mps")
     return torch.device("cpu")
 
 
-# --------------------------------------------------------------------------- #
-# windowing
-# --------------------------------------------------------------------------- #
+
 def build_windows(df: pd.DataFrame, horizon: int):
     """Return (hist, fut, cal, y, origin_times) aligned on the ORIGIN index.
 
@@ -114,19 +76,19 @@ def build_windows(df: pd.DataFrame, horizon: int):
     last = n - horizon - 1
     idx = np.arange(first, last + 1)
 
-    # sliding_window_view is a view, not a copy - cheap for 27k x 168 x 18
+   
     hist = np.lib.stride_tricks.sliding_window_view(H, SEQ_LEN, axis=0)
-    hist = hist.transpose(0, 2, 1)[idx - first]                   # (N, SEQ_LEN, C)
+    hist = hist.transpose(0, 2, 1)[idx - first]                  
 
     fut = np.lib.stride_tricks.sliding_window_view(F, horizon, axis=0)
-    fut = fut.transpose(0, 2, 1)[idx + 1]                         # (N, horizon, C)
+    fut = fut.transpose(0, 2, 1)[idx + 1]                        
 
     return (
         np.ascontiguousarray(hist),
         np.ascontiguousarray(fut),
-        CAL[idx + horizon],                                       # calendar AT t+h
-        aqi[idx + horizon],                                       # target
-        aqi[idx],                                                 # persistence anchor
+        CAL[idx + horizon],                                       
+        aqi[idx + horizon],                                      
+        aqi[idx],                                                
         df.index[idx],
     )
 
@@ -139,19 +101,17 @@ def assert_alignment(df, hist, fut, cal, y, anchor, times, horizon):
 
     assert np.isclose(y[k], df.loc[tgt_t, cfg.TARGET]), "target misaligned"
     assert np.isclose(anchor[k], df.loc[t, cfg.TARGET]), "anchor misaligned"
-    # last history step must be time t itself, not t+1
+    
     assert np.isclose(hist[k, -1, 0], df.loc[t, cfg.TARGET]), "history overruns t"
-    # first future step must be t+1
+    
     assert np.isclose(fut[k, 0, 0], df.loc[t + pd.Timedelta(hours=1), FUT_VARS[0]]), \
         "future window misaligned"
-    # last future step must be t+h
+    
     assert np.isclose(fut[k, -1, 0], df.loc[tgt_t, FUT_VARS[0]]), "future end misaligned"
     print(f"  alignment checks passed at {t}")
 
 
-# --------------------------------------------------------------------------- #
-# model
-# --------------------------------------------------------------------------- #
+
 class SeqForecaster(nn.Module):
     def __init__(self, n_hist: int, n_fut: int, n_cal: int,
                  arch: str = "gru", hidden: int = 64, layers: int = 1,
@@ -180,9 +140,7 @@ class SeqForecaster(nn.Module):
         return self.head(z).squeeze(-1)
 
 
-# --------------------------------------------------------------------------- #
-# metrics
-# --------------------------------------------------------------------------- #
+
 def metrics(y, p) -> dict:
     y, p = np.asarray(y, float), np.asarray(p, float)
     e = p - y
@@ -203,14 +161,14 @@ def metrics(y, p) -> dict:
     }
 
 
-# --------------------------------------------------------------------------- #
+
 def run(horizon: int, args) -> dict:
     torch.manual_seed(SEED)
     np.random.seed(SEED)
     dev_ = device()
 
     df = pd.read_parquet(cfg.DATA_INTERIM / "clean.parquet").set_index("time")
-    df = df.ffill().bfill()          # residual NaNs would poison the tensors
+    df = df.ffill().bfill()         
 
     hist, fut, cal, y, anchor, times = build_windows(df, horizon)
     print(f"\n{'=' * 70}\nhorizon {horizon}h | {args.arch.upper()} | device {dev_}")
@@ -221,15 +179,14 @@ def run(horizon: int, args) -> dict:
     dev_idx = np.where(~is_hold)[0]
     hold_idx = np.where(is_hold)[0]
 
-    # purge: a training origin at i has its target at i+horizon, which must not
-    # fall inside validation
+    
     gap = horizon + 24
     n_val = int(len(dev_idx) * VAL_FRAC)
     val_idx = dev_idx[-n_val:]
     tr_idx = dev_idx[: len(dev_idx) - n_val - gap]
     print(f"  train {len(tr_idx)} | purge {gap} | val {len(val_idx)} | holdout {len(hold_idx)}")
 
-    # --- scale on train only
+  
     def fit_scaler(a):
         flat = a.reshape(-1, a.shape[-1])
         return flat.mean(0), flat.std(0) + 1e-6
@@ -239,7 +196,7 @@ def run(horizon: int, args) -> dict:
     HS = ((hist - mh) / sh).astype(np.float32)
     FS = ((fut - mf) / sf).astype(np.float32)
 
-    # --- target: residual from persistence, or raw level
+   
     if args.residual:
         target = (y - anchor).astype(np.float32)
     else:
@@ -263,7 +220,7 @@ def run(horizon: int, args) -> dict:
                           layers=args.layers, dropout=args.dropout).to(dev_)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=3)
-    lossf = nn.HuberLoss(delta=1.0)     # robust to the dust-event outliers
+    lossf = nn.HuberLoss(delta=1.0)    
 
     def predict(dl, idx):
         model.eval()

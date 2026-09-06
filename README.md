@@ -28,6 +28,27 @@ detects 48% of Unhealthy hours three days out; a 90th-percentile quantile model
 detects 92%, at the cost of more false alarms. Different jobs need different
 models.
 
+## What you'll see
+
+The page **themes itself to live conditions** — clear skies get a sun and
+drifting cloud, after 7pm it becomes a night sky, rain brings falling drops,
+and heavy smog gets its own hazy state rather than a cheerful sun on a day the
+air is dangerous. The speckling behind the AQI number thickens as the air does.
+
+**A scope-limited health assistant** answers questions like *"I have asthma —
+can I go for a walk right now?"* It runs on this system's own live readings and
+forecast rather than general knowledge, so it can't disagree with the numbers
+on the page. It never diagnoses, routes severe symptoms to emergency care, and
+declines anything outside air quality.
+
+**The accuracy panel** scores every past forecast against what was actually
+observed. Most dashboards assert their quality; this one shows it, including
+when it's wrong.
+
+**Per-prediction explanations** show the SHAP contributions behind each
+forecast — computed at prediction time, so the explanation always matches the
+number it explains.
+
 ## How it works
 
 ```
@@ -77,30 +98,39 @@ src/
   data/              ingestion, cleaning, feature store
   features/          feature construction + leakage checks
   models/            training, inference, SHAP, sequence models
-  app/               Streamlit dashboard
+  app/               Streamlit dashboard + health assistant
 models/              6 artifacts (3 point heads, 3 alert heads) + metadata
 reports/             metrics, figures, forecast history
 ```
 
 ## Running it
 
-```bash
-pip install -r requirements-dev.txt
-export HOPSWORKS_API_KEY="..."      # free tier at hopsworks.ai
+Pipeline and training:
 
-python -m src.data.fetch_openmeteo   # backfill from Aug 2022
+```bash
+pip install -r requirements-dev.txt   # includes requirements.txt
+export HOPSWORKS_API_KEY="..."        # free tier at hopsworks.ai
+
+python -m src.data.fetch_openmeteo    # backfill from Aug 2022
 python -m src.data.clean
 python -m src.features.build_features
 python -m src.models.train
 python -m src.models.predict
 ```
 
-The dashboard needs no credentials — it reads committed JSON and the public
-Open-Meteo API:
+The dashboard needs no Hopsworks credentials — it reads committed JSON and the
+public Open-Meteo API, and runs on four packages:
 
 ```bash
 pip install -r requirements.txt
 streamlit run src/app/dashboard.py
+```
+
+For the assistant, add an OpenAI key to `.streamlit/secrets.toml` locally, or
+to the Secrets panel on Streamlit Cloud. Everything else works without it.
+
+```toml
+OPENAI_API_KEY = "sk-..."
 ```
 
 ## Known limitations

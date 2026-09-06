@@ -1,26 +1,3 @@
-"""
-Daily pipeline - the CI entrypoint run by .github/workflows/daily.yml.
-
-    feature store -> full feature datasets -> train -> evaluate -> register
-
-Unlike the hourly job, training needs the FULL history, so this pulls every row
-from the feature groups rather than a tail.
-
-On not gating the retrain
--------------------------
-There is no "only register if better" check here, deliberately. Inference
-selects the best registered version by metric (see src/models/predict.py), so a
-worse retrain is registered but never served. Adding a gate would only hide the
-degradation; registering it and letting selection ignore it keeps the full
-history visible in the registry, which is what you want when diagnosing drift.
-
-The job still prints a comparison against the previously registered best so a
-regression is obvious in the CI log.
-
-Run:
-    python -m pipelines.daily
-    python -m pipelines.daily --skip-register
-"""
 
 from __future__ import annotations
 
@@ -116,6 +93,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:                                          # noqa: BLE001
+    except Exception:                                          
         traceback.print_exc()
         sys.exit(1)

@@ -1,20 +1,3 @@
-"""
-Step 3 - EDA.
-
-Answers specific questions rather than producing generic plots. Every figure
-here is one you can defend in the report:
-
-  Q1  What does the AQI distribution look like, and is it stationary?
-  Q2  How strong is the diurnal cycle, and does it change by season?
-  Q3  Which pollutant actually drives us_aqi, and over what averaging window?
-  Q4  Does weather matter contemporaneously or cumulatively?
-  Q5  What do the naive baselines score? (this is the bar the model must clear)
-
-Run:
-    python -m src.eda
-Figures land in reports/figures/.
-"""
-
 from __future__ import annotations
 
 import matplotlib
@@ -50,7 +33,7 @@ def _save(fig, name: str) -> None:
     print(f"  saved {name}")
 
 
-# ------------------------------------------------------------------ Q1
+
 def q1_distribution(df: pd.DataFrame) -> None:
     print("\nQ1 - target distribution")
     a = df[cfg.TARGET]
@@ -71,7 +54,7 @@ def q1_distribution(df: pd.DataFrame) -> None:
     _save(fig, "q1_distribution.png")
 
 
-# ------------------------------------------------------------------ Q2
+
 def q2_diurnal(df: pd.DataFrame) -> None:
     print("\nQ2 - diurnal cycle by season")
     piv = df.pivot_table(index="hour_local", columns="season",
@@ -90,7 +73,7 @@ def q2_diurnal(df: pd.DataFrame) -> None:
     _save(fig, "q2_diurnal_by_season.png")
 
 
-# ------------------------------------------------------------------ Q3
+
 def q3_drivers(df: pd.DataFrame) -> None:
     print("\nQ3 - which pollutant drives the target, over which window?")
     d = df.copy()
@@ -115,7 +98,7 @@ def q3_drivers(df: pd.DataFrame) -> None:
     _save(fig, "q3_drivers.png")
 
 
-# ------------------------------------------------------------------ Q4
+
 def q4_weather(df: pd.DataFrame) -> None:
     print("\nQ4 - contemporaneous vs cumulative weather effect")
     a = df[cfg.TARGET]
@@ -151,7 +134,7 @@ def q4_weather(df: pd.DataFrame) -> None:
     _save(fig, "q4_weather_windows.png")
 
 
-# ------------------------------------------------------------------ Q5
+
 def q5_baselines(df: pd.DataFrame) -> pd.DataFrame:
     print(f"\nQ5 - naive baselines (test window from {TEST_START})")
     train = df[df.index < TEST_START]

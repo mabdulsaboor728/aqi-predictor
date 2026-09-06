@@ -1,40 +1,4 @@
-"""
-Air-quality health assistant.
 
-A narrow-scope chat helper that answers one kind of question: given the air
-quality and weather *right now in Islamabad*, and what the person tells you
-about themselves, is it a good idea to go outside?
-
-Live grounding
---------------
-Every request carries a freshly built context block containing the current AQI
-and category, the measured pollutant concentrations, current weather, and this
-system's own three-day forecast including the alert-head upper bound. The model
-is told to treat that block as the only source of truth for current conditions
-and never to substitute remembered or general knowledge about Islamabad's air.
-This is why the assistant can answer "can I run this evening" correctly rather
-than reciting averages.
-
-Safety posture
---------------
-This gives general public-health guidance of the kind an air quality bulletin
-carries. It is not a clinician. Three rules are enforced in the prompt:
-
-  * severe symptoms are routed straight to emergency care, with no air-quality
-    discussion attached
-  * it never names a condition the person has not named, and never advises on
-    medication or dosing
-  * persistent or worsening symptoms get a recommendation to see a doctor
-
-Setup
------
-Add the key to Streamlit secrets (.streamlit/secrets.toml locally, or the app
-Settings -> Secrets panel on Streamlit Cloud):
-
-    OPENAI_API_KEY = "sk-..."
-
-Never commit it. .streamlit/secrets.toml belongs in .gitignore.
-"""
 
 from __future__ import annotations
 
@@ -43,14 +7,14 @@ import os
 MODEL = "gpt-4o-mini"
 MAX_TOKENS = 500
 TEMPERATURE = 0.3
-HISTORY_TURNS = 8          # how much conversation to send back
+HISTORY_TURNS = 8         
 
 AQI_BANDS = [
     (50, "Good"), (100, "Moderate"), (150, "Unhealthy for sensitive groups"),
     (200, "Unhealthy"), (300, "Very unhealthy"), (10**6, "Hazardous"),
 ]
 
-# Concentration at which each pollutant starts to matter, for context only.
+
 POLLUTANT_REFS = {
     "pm2_5": ("PM2.5", "µg/m³", 35.4),
     "pm10": ("PM10", "µg/m³", 154.0),
@@ -77,7 +41,7 @@ def api_key() -> str | None:
         import streamlit as st
         if "OPENAI_API_KEY" in st.secrets:
             return st.secrets["OPENAI_API_KEY"]
-    except Exception:                                         # noqa: BLE001
+    except Exception:                                         
         pass
     return os.environ.get("OPENAI_API_KEY")
 
