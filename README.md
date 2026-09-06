@@ -1,6 +1,6 @@
 # Islamabad AQI Forecast
 
-Three-day air quality forecasting for Islamabad, running unattended. An hourly
+Three day air quality forecasting for Islamabad, running unattended. An hourly
 job ingests data, rebuilds features and publishes a forecast; a daily job
 retrains and registers models; a Streamlit dashboard shows the result.
 
@@ -11,7 +11,7 @@ retrains and registers models; a Streamlit dashboard shows the result.
 
 ## Results
 
-Rolling twelve-month holdout, never seen during training:
+Rolling twelve month holdout, never seen during training:
 
 | Horizon | Model | RMSE | MAE | R² | vs. persistence |
 |---|---|---|---|---|---|
@@ -19,12 +19,12 @@ Rolling twelve-month holdout, never seen during training:
 | +48h | XGBoost | 17.49 | 13.55 | 0.679 | 19.2% better |
 | +72h | XGBoost | 19.01 | 14.86 | 0.620 | 22.4% better |
 
-Persistence — assuming tomorrow matches today — is the baseline. It is a hard
+Persistence, assuming tomorrow matches today, is the baseline. It is a hard
 bar at 24 hours and has no skill left at 72 (R² −0.148), which is why the
 model's advantage grows with horizon.
 
-A second model per horizon handles warnings. The accuracy-optimised forecast
-detects 48% of Unhealthy hours three days out; a 90th-percentile quantile model
+A second model per horizon handles warnings. The accuracy optimised forecast
+detects 48% of Unhealthy hours three days out; a 90th percentile quantile model
 detects 92%, at the cost of more false alarms. Different jobs need different
 models.
 
@@ -35,7 +35,7 @@ drifting cloud, after 7pm it becomes a night sky, rain brings falling drops,
 and heavy smog gets its own hazy state rather than a cheerful sun on a day the
 air is dangerous. The speckling behind the AQI number thickens as the air does.
 
-**A scope-limited health assistant** answers questions like *"I have asthma —
+**A scope-limited health assistant** answers questions like *"I have asthma,
 can I go for a walk right now?"* It runs on this system's own live readings and
 forecast rather than general knowledge, so it can't disagree with the numbers
 on the page. It never diagnoses, routes severe symptoms to emergency care, and
@@ -45,14 +45,14 @@ declines anything outside air quality.
 observed. Most dashboards assert their quality; this one shows it, including
 when it's wrong.
 
-**Per-prediction explanations** show the SHAP contributions behind each
-forecast — computed at prediction time, so the explanation always matches the
+**Per prediction explanations** show the SHAP contributions behind each
+forecast computed at prediction time, so the explanation always matches the
 number it explains.
 
 ## How it works
 
 ```
-Open-Meteo (CAMS air quality + weather forecast)
+Open Meteo (CAMS air quality + weather forecast)
         │
         ▼
   hourly pipeline ──── Hopsworks feature store ──── daily retrain
@@ -73,7 +73,7 @@ experiences.
 ## Three things worth knowing
 
 **The target is built from rolling averages.** US AQI is the maximum of
-per-pollutant sub-indices, each using its own averaging window — PM2.5 over 24
+per pollutant sub indices, each using its own averaging window PM2.5 over 24
 hours, ozone over 8. Matching those windows in the features raised the
 correlation between PM2.5 and winter AQI from 0.573 to 0.966. That single
 change mattered more than any model choice.
@@ -142,7 +142,7 @@ train/serve skew rather than target leakage, and [the report](REPORT.md#111-fore
 covers it in detail alongside five other limitations.
 
 The target is a CAMS model estimate at roughly 40 km resolution, not a ground
-station reading — regional air quality rather than street-level.
+station reading regional air quality rather than street level.
 
 ---
 
