@@ -1,8 +1,6 @@
-# Three-Day Air Quality Forecasting for Islamabad
+# Three Day Air Quality Forecasting for Islamabad
 
-**An end-to-end, automated AQI prediction system**
-
-Muhammad Abdul Saboor · 10Pearls Shine Internship · September 2026
+**An end to end, automated AQI prediction system**
 
 Repository: `github.com/mabdulsaboor728/aqi-predictor`
 Dashboard: `aqi-predictor-by-mas728.streamlit.app`
@@ -16,7 +14,7 @@ hours ahead. It runs continuously and unattended: an hourly job ingests data,
 rebuilds features and publishes a forecast; a daily job retrains and registers
 models; a public dashboard displays the result.
 
-**Headline results**, measured on a rolling twelve-month holdout the models
+**Headline results**, measured on a rolling twelve month holdout the models
 never trained on:
 
 | Horizon | Model | RMSE | MAE | R² | Persistence RMSE | Improvement |
@@ -27,27 +25,27 @@ never trained on:
 
 The improvement over the persistence baseline *grows* with horizon, which is
 the desired shape: at 24 hours persistence is already strong, while at 72 hours
-it has no skill left (R² −0.148) and the model's seasonal and weather-forecast
+it has no skill left (R² −0.148) and the model's seasonal and weather forecast
 inputs carry the prediction alone.
 
-A second model per horizon handles hazardous-air warnings. The RMSE-optimal
+A second model per horizon handles hazardous air warnings. The RMSE optimal
 forecast detects only 48% of Unhealthy hours at 72 hours ahead; a
-90th-percentile quantile model detects 92%. These are different objectives and
+90th percentile quantile model detects 92%. These are different objectives and
 one model cannot serve both.
 
 The public surface is a Streamlit dashboard that themes itself to live
 conditions, scores its own past forecasts against what actually happened,
 explains each prediction with SHAP contributions computed at prediction time,
-and carries a scope-limited health assistant grounded in the same live data.
+and carries a scope limited health assistant grounded in the same live data.
 
 **Three findings shaped the work more than any modelling choice:**
 
 1. The US AQI target is constructed from *rolling averages* of its component
    pollutants. Matching those averaging windows in the features raised the
    correlation between PM2.5 and winter AQI from 0.573 to **0.966**.
-2. Wind clears pollution cumulatively, not instantly. Same-hour wind speed
+2. Wind clears pollution cumulatively, not instantly. Same hour wind speed
    correlates −0.109 with AQI; a 72-hour rolling mean correlates **−0.356**.
-3. The original cross-validation design silently froze the training set, so
+3. The original cross validation design silently froze the training set, so
    "daily retraining" refit identical data every day. Fixing it also reversed
    the model ranking.
 
@@ -63,17 +61,17 @@ an automated pipeline and a dashboard.
 ### 2.2 Choice of city
 
 Lahore is the city Pakistan cares most about, but its air quality is dominated
-by crop-residue burning and winter inversions — regime switches that
+by crop residue burning and winter inversions, regime switches that
 meteorological features cannot observe. Islamabad's AQI moves with variables
 the model can actually see: wind, humidity, boundary layer conditions, and
 season.
 
 The city is a configuration parameter (`src/config.py`), so the same pipeline
-runs anywhere Open-Meteo has coverage by changing two coordinates. Islamabad
+runs anywhere Open Meteo has coverage by changing two coordinates. Islamabad
 was chosen as the primary target because it yields a model whose behaviour can
 be explained rather than one whose errors are unattributable.
 
-### 2.3 Direct versus recursive multi-horizon
+### 2.3 Direct versus recursive multi horizon
 
 Two ways to forecast 72 hours ahead:
 
@@ -84,13 +82,13 @@ Two ways to forecast 72 hours ahead:
 
 Direct was chosen, and the results vindicate it. Different model families win
 at different horizons (gradient boosting variants at all three, but Ridge is
-competitive at 24h and badly beaten at 72h with five times the fold-to-fold
+competitive at 24h and badly beaten at 72h with five times the fold to fold
 variance), and the balance of feature importance shifts substantially with
 horizon. The problem genuinely changes shape as the horizon extends; one model
 cannot be optimal for all three.
 
 The cost is six model artifacts instead of one. A single model with horizon as
-an input feature is a legitimate alternative that was not tested — noted
+an input feature is a legitimate alternative that was not tested, noted
 honestly rather than dismissed.
 
 ### 2.4 The availability contract
@@ -106,11 +104,11 @@ availability:
 | Weather | through `t+h` | weather forecast API |
 
 Weather at `t+h` is legitimate because a national meteorological service
-forecasts it independently — the model is consuming an available input, not
+forecasts it independently, the model is consuming an available input, not
 cheating. Pollutant data at `t+h` does not exist and using it would be leakage.
 
-Every feature name encodes which side it belongs to: `_t` for origin-side,
-`_f_h{horizon}` for forecast-side. The suffix makes availability auditable with
+Every feature name encodes which side it belongs to: `_t` for origin side,
+`_f_h{horizon}` for forecast side. The suffix makes availability auditable with
 a single grep, which is a stronger guarantee than a claim of care.
 
 ---
@@ -121,7 +119,7 @@ a single grep, which is a stronger guarantee than a claim of care.
 
 | Source | Endpoint | Variables |
 |---|---|---|
-| Air quality | Open-Meteo, CAMS global | 9 (8 pollutants + `us_aqi`) |
+| Air quality | Open Meteo, CAMS global | 9 (8 pollutants + `us_aqi`) |
 | Weather | Open-Meteo Historical Forecast | 12 |
 
 Coverage: 5 August 2022 to present, hourly, at 33.6844°N 73.0479°E.
@@ -135,8 +133,8 @@ the time, in the same variables and units as the live forecast API, so training
 and serving stay consistent. (Section 11.1 explains why this is necessary but
 not sufficient.)
 
-**`domains=cams_global` is pinned explicitly.** Open-Meteo defaults to `auto`,
-which can route to the European CAMS domain — which has no coverage over
+**`domains=cams_global` is pinned explicitly.** Open Meteo defaults to `auto`,
+which can route to the European CAMS domain, which has no coverage over
 Pakistan and would return silent nulls.
 
 ### 3.2 Cleaning
@@ -145,8 +143,8 @@ Pakistan and would return silent nulls.
 |---|---|---|
 | Drop `boundary_layer_height` | 51% missing (archive covers Sep 2024+); correlation with target 0.003 | Keeping it would cost half the training data for no signal |
 | Trim leading rows | one contiguous 96-hour `us_aqi` gap at series start | 96 rows removed |
-| Enforce hourly grid | reindex to a complete hourly UTC index | Guarantees lag-24 means 24 hours |
-| Clip physical impossibilities | negatives on strictly-positive quantities | 51 values clipped |
+| Enforce hourly grid | reindex to a complete hourly UTC index | Guarantees lag 24 means 24 hours |
+| Clip physical impossibilities | negatives on strictly positive quantities | 51 values clipped |
 | Fill short gaps | forward-fill, capped at 3 hours | 0 values (no interior gaps present) |
 
 Result: 35,664 rows × 20 variables, zero target nulls.
@@ -158,15 +156,15 @@ positions get *written*, not which endpoints participate in the arithmetic:
 `[0, NaN, 2]` becomes `[0, 1, 2]`, with the middle value computed from the
 observation that comes after it. A gap at 3pm would be filled using the 5pm
 reading, injecting a future observation into every lag and rolling feature at
-3pm — with no downstream check able to catch it, because the value looks
+3pm, with no downstream check able to catch it, because the value looks
 entirely plausible.
 
 Replaced with `ffill(limit=3)`, which reads nothing after `t`. The result is a
 step rather than a smooth ramp, which is less accurate for a continuous series.
 That is the correct trade: an accurate value built from the future is worse
 than a slightly stale value built only from the past, because only the second
-is available at serving time. The bug never fired on this dataset — there are
-no interior gaps — but it would have on the first CAMS outage.
+is available at serving time. The bug never fired on this dataset, there are
+no interior gaps, but it would have on the first CAMS outage.
 
 ### 3.3 Enforcing the hourly grid
 
@@ -201,7 +199,7 @@ gallery. All figures are in `reports/figures/`.
 | Very unhealthy | 0.2% |
 
 Islamabad spends the large majority of hours in the Moderate to
-Unhealthy-for-Sensitive-Groups range. Genuinely hazardous readings are rare in
+Unhealthy for Sensitive Groups range. Genuinely hazardous readings are rare in
 this dataset, which has consequences for how confidently the model can be
 evaluated at the extreme (Section 6.6).
 
@@ -231,11 +229,11 @@ Amplitude (highest hour minus lowest hour) of mean AQI:
 Winter AQI is essentially flat across the day. This is not a data error, and
 explaining it reframed the entire feature design.
 
-**US AQI is the maximum of per-pollutant sub-indices, and each sub-index uses a
-different averaging window** — PM2.5 over 24 hours, ozone over 8 hours. In
-winter, PM2.5 is the binding constraint, and a 24-hour rolling mean barely
+**US AQI is the maximum of per pollutant sub indices, and each sub index uses a
+different averaging window**, PM2.5 over 24 hours, ozone over 8 hours. In
+winter, PM2.5 is the binding constraint, and a 24 hour rolling mean barely
 moves hour to hour, so the AQI is flat. In summer, ozone binds instead, and its
-8-hour window produces a sharp peak at 18:00 local.
+8 hour window produces a sharp peak at 18:00 local.
 
 Correlation of `us_aqi` with candidate features, by season:
 
@@ -247,18 +245,18 @@ Correlation of `us_aqi` with candidate features, by season:
 | `ozone` (raw hourly) | −0.066 | 0.200 | 0.281 | 0.092 |
 | `ozone` rolling 8h | −0.100 | 0.501 | **0.588** | 0.260 |
 
-**Simply matching the averaging window to the sub-index definition raised
+**Simply matching the averaging window to the sub index definition raised
 winter correlation from 0.573 to 0.966.** No amount of hyperparameter tuning
 would have recovered that. This single insight did more for model quality than
 every algorithm choice combined.
 
-It also means hour-of-day means something completely different in January than
-in June, which a linear model cannot express — an early indication that tree
+It also means hour of day means something completely different in January than
+in June, which a linear model cannot express, an early indication that tree
 models would win at longer horizons.
 
 ### 4.4 Weather acts cumulatively, not instantly
 
-Correlation of `us_aqi` at time t with weather at t − lag:
+Correlation of `us_aqi` at time t with weather at t lag:
 
 | Lag | Wind speed | Gusts | Humidity | Temperature |
 |---|---|---|---|---|
@@ -276,13 +274,13 @@ Rolling windows:
 | 48h | −0.349 | −0.139 |
 | 72h | **−0.356** | −0.143 |
 
-Same-hour wind looks nearly useless. Accumulated ventilation over two to three
+Same hour wind looks nearly useless. Accumulated ventilation over two to three
 days is more than three times stronger. Ventilation is a cumulative process,
 and the window matters more than the variable.
 
 ### 4.5 Baselines
 
-Two naive baselines, evaluated on a held-out period (test std 30.45):
+Two naive baselines, evaluated on a held out period (test std 30.45):
 
 | Baseline | MAE | RMSE |
 |---|---|---|
@@ -292,7 +290,7 @@ Two naive baselines, evaluated on a held-out period (test std 30.45):
 | Climatology (day-of-year × hour) | 21.07 | 27.39 |
 
 Two things follow. First, persistence at 72 hours already captures most of the
-variance, so it is a genuine bar rather than a formality — a model scoring RMSE
+variance, so it is a genuine bar rather than a formality a model scoring RMSE
 26 at 72 hours would be an expensive copy of `y[t]`. Second, **climatology
 loses to persistence at every horizon**, which says recent state matters more
 than seasonal average, and that lag features would carry the model with
@@ -306,14 +304,14 @@ calendar features as a modifier.
 
 91 features from 20 cleaned variables, split by availability.
 
-**Origin side — 62 features, suffix `_t`.** Computed from history at or before
+**Origin side 62 features, suffix `_t`.** Computed from history at or before
 `t`.
 
 | Group | Count | Contents |
 |---|---|---|
 | AQI lags | 9 | 1, 2, 3, 6, 12, 24, 48, 72, 168 hours |
 | AQI rolling statistics | 11 | mean over 3/6/24/72/168h; std, max, min over 24/72h |
-| AQI deltas and rates | 8 | change and change-per-hour over 3/6/24/72h |
+| AQI deltas and rates | 8 | change and change per hour over 3/6/24/72h |
 | AQI level and anchors | 3 | current value, same hour yesterday, anomaly vs 72h mean |
 | Pollutant sub-index rolls | 5 | PM2.5 24h, PM10 24h, ozone 8h, SO₂ 24h, CO 8h |
 | Pollutant lags | 16 | 8 pollutants × lags 1h and 24h |
@@ -336,13 +334,13 @@ target hour.
 Four groups exist because the analysis found something, not because a template
 suggested them:
 
-**Sub-index-matched rolling windows.** PM2.5 and PM10 over 24 hours, ozone and
+**Sub index matched rolling windows.** PM2.5 and PM10 over 24 hours, ozone and
 CO over 8 hours, matching the US AQI definition (Section 4.3).
 
 **Cumulative weather.** Rolling wind means and precipitation sums over 24, 48
 and 72 hours, because ventilation accumulates (Section 4.4).
 
-**Cyclical encodings.** Hour and day-of-year as sin/cos pairs, so 23:00 sits
+**Cyclical encodings.** Hour and day of year as sin/cos pairs, so 23:00 sits
 next to 00:00 and 31 December next to 1 January. Wind direction likewise, since
 359° and 1° are adjacent.
 
@@ -362,10 +360,10 @@ detects.
 
 ### 5.4 Target maturity
 
-The Open-Meteo air-quality endpoint is a CAMS *forecast* product: for the
+The Open Meteo air quality endpoint is a CAMS *forecast* product: for the
 current day it returns provisional values for hours that have not happened yet.
 Without a cap, the pipeline would emit training rows whose "target" is another
-model's forecast rather than an observation — teaching the model to imitate
+model's forecast rather than an observation, teaching the model to imitate
 CAMS instead of to predict air quality.
 
 `build_supervised()` therefore takes a `max_target_time` argument. The hourly
@@ -393,7 +391,7 @@ was added after discovering it changed the answer (Section 6.3).
 **Rolling holdout.** The final 365 days of available data, scored exactly once
 per training run.
 
-### 6.2 The frozen-training-set bug
+### 6.2 The frozen training set bug
 
 The first implementation used a fixed holdout start date and no end date:
 
@@ -419,14 +417,14 @@ across versions, differing by a day rather than by months. Each registered
 model records its exact holdout window in metadata so any cross-version
 comparison can be audited rather than assumed valid.
 
-### 6.3 The cross-validation fix that reversed the ranking
+### 6.3 The cross validation fix that reversed the ranking
 
-The original walk-forward split began its first fold after roughly six months
+The original walk forward split began its first fold after roughly six months
 of data. A model that has never seen a full seasonal cycle cannot use
-`doy_sin`, `month`, or any seasonal feature — so early folds were unfairly bad,
+`doy_sin`, `month`, or any seasonal feature, so early folds were unfairly bad,
 and they penalised the models that rely most on seasonal structure.
 
-Before the fix, Ridge appeared to win at 24 hours. After imposing a two-year
+Before the fix, Ridge appeared to win at 24 hours. After imposing a two year
 minimum training size:
 
 | h=24 | CV RMSE | vs persistence |
@@ -448,7 +446,7 @@ why the evaluation design deserves as much scrutiny as the model.
 
 ### 6.4 Model comparison
 
-Five families were compared under an identical protocol. Cross-validated RMSE
+Five families were compared under an identical protocol. Cross validated RMSE
 on the development set:
 
 | Model | h=24 | h=48 | h=72 |
@@ -468,7 +466,7 @@ Held-out year, selected model per horizon:
 | +72h | XGBoost | 19.01 | 14.86 | 0.620 | 24.51 | 22.4% |
 
 **A caution on model selection.** At 24 and 72 hours, HistGBM and XGBoost are
-separated by less than a fifth of the fold-to-fold noise. The defensible claim
+separated by less than a fifth of the fold to fold noise. The defensible claim
 is that gradient boosting clearly beats linear and bagged models; the choice
 between the two boosting implementations is within noise. Ridge's collapse at
 72 hours (±5.18 spread, R² −0.013) is a real result: a linear model cannot
@@ -479,7 +477,7 @@ handle the seasonal regime shifts once persistence stops carrying it.
 The brief asks for models spanning statistical to deep learning. GRU and LSTM
 sequence models were built and evaluated under the identical protocol.
 
-Architecture: two encoders — one reading 168 hours of raw pollutant and weather
+Architecture: two encoders, one reading 168 hours of raw pollutant and weather
 history ending at `t`, one reading the weather forecast sequence from `t+1` to
 `t+h` — concatenated with calendar features and passed to a dense head. The
 network predicts the residual from persistence rather than the level, since
@@ -494,9 +492,9 @@ events are genuine outliers that would dominate an MSE gradient.
 
 Both recurrent models sit between persistence and gradient boosting.
 Importantly, their advantage over persistence stays flat with horizon (13.9% →
-14.1% for GRU) while boosting's grows (16.9% → 22.4%) — the sequence models are
+14.1% for GRU) while boosting's grows (16.9% → 22.4%) the sequence models are
 weakest at exactly the horizon where seasonal and forecast-weather structure
-must carry the prediction, which the hand-built features encode explicitly and
+must carry the prediction, which the hand built features encode explicitly and
 the networks would have had to discover.
 
 Training loss fell from 0.29 to 0.03 while validation stalled, with early
@@ -511,7 +509,7 @@ samples this is expected; the limit is data volume, not regularisation.
 | +48h | −6.29 | −25.31 |
 | +72h | −5.53 | −27.60 |
 
-The recurrent models mean-revert roughly four times less. Two causes, both
+The recurrent models mean revert roughly four times less. Two causes, both
 about the loss rather than the architecture: Huber loss does not punish large
 errors quadratically, so there is much less incentive to hedge toward the mean;
 and the residual formulation anchors every prediction to persistence, which
@@ -522,12 +520,12 @@ tested under an identical protocol and rejected on evidence. Its lower
 mean-reversion bias is recorded as support for the same insight that motivated
 the quantile alert head.
 
-The GRU-versus-LSTM difference (0.6 to 1.9 RMSE, single seeds) is within
+The GRU versus LSTM difference (0.6 to 1.9 RMSE, single seeds) is within
 seed-to-seed noise and no claim is made about it.
 
-### 6.6 Mean reversion, and the two-head design
+### 6.6 Mean reversion, and the two head design
 
-Every RMSE-optimised model in this project under-predicts high-AQI hours, and
+Every RMSE optimised model in this project under predicts high AQI hours, and
 the effect worsens with horizon. CV bias on hours above AQI 150:
 
 | Horizon | Bias |
@@ -542,9 +540,9 @@ systematically low; it is systematically low *in the tail*. That distinction
 matters: an unconditional bias of −28 would be a calibration failure, whereas a
 tail-conditional one is the expected cost of minimising squared error.
 
-This is textbook squared-error behaviour: RMSE rewards hedging toward the mean.
+This is textbook squared error behaviour: RMSE rewards hedging toward the mean.
 It is also precisely the wrong behaviour for a system whose stated purpose
-includes hazardous-level warnings. The practical cost is a category error on
+includes hazardous level warnings. The practical cost is a category error on
 exactly the days that matter: an actual reading of 175 (Unhealthy) is forecast
 at roughly 147, which displays as Unhealthy for sensitive groups. The alert
 head exists because the displayed number crosses a health boundary in the wrong
@@ -559,11 +557,11 @@ Detection performance at threshold AQI > 150, h=72:
 | Quantile 0.90 | 0.62 | 0.58 | 30.09 |
 | Quantile 0.95 | 0.72 | 0.46 | 35.93 |
 
-The RMSE-optimal model is not broken — it is correctly optimised for the wrong
+The RMSE-optimal model is not broken, it is correctly optimised for the wrong
 objective. **Two models per horizon** are therefore trained and deployed:
 
-- **Point head** — RMSE-optimal, produces the number shown on the dashboard.
-- **Alert head** — HistGradientBoosting with quantile loss at α = 0.90, used
+- **Point head**  RMSE-optimal, produces the number shown on the dashboard.
+- **Alert head**  HistGradientBoosting with quantile loss at α = 0.90, used
   only for the threshold warning.
 
 Final holdout alert performance:
@@ -574,7 +572,7 @@ Final holdout alert performance:
 | +48h | 0.60 | 0.94 | 0.58 |
 | +72h | 0.48 | 0.92 | 0.60 |
 
-**The trade-off is explicit and deliberate.** Precision falls to roughly 0.60,
+**The trade off is explicit and deliberate.** Precision falls to roughly 0.60,
 so about 40% of alerts are false alarms. For a public health warning, a missed
 Unhealthy day costs far more than an unnecessary mask. Both numbers are
 reported side by side rather than only the favourable one, and the quantile is
@@ -588,7 +586,7 @@ assumption:
 | Approach | Result | Decision |
 |---|---|---|
 | Predicting delta from persistence (trees) | identical CV RMSE | rejected — `us_aqi_t` already handles it |
-| MAE / absolute-error loss | worse RMSE, no bias improvement | rejected |
+| MAE / absolute error loss | worse RMSE, no bias improvement | rejected |
 | Ridge + GBM blend | −1% at h=24, worse at h=72 | rejected |
 | HistGBM + XGBoost average | 22.51 vs 22.41 — inside noise | rejected |
 | Sample weighting toward high AQI | RMSE 22.51 vs 22.59, bias −25.0 vs −28.0 | not adopted; quantile head is a cleaner fix |
@@ -606,13 +604,13 @@ Error by month, h=72 (MAE):
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 12.2 | 15.1 | 10.2 | 12.2 | **25.4** | 17.4 | 19.1 | 15.8 | 14.8 | 13.1 | 9.6 | 13.0 |
 
-May is the worst month at every horizon, and November the best. Pre-monsoon May
+May is the worst month at every horizon, and November the best. Pre monsoon May
 brings dust storms and the onset of ozone season, both of which arrive faster
-than a 72-hour forecast can track and neither of which the weather features
+than a 72 hour forecast can track and neither of which the weather features
 observe directly.
 
-Error by AQI band shows the mean-reversion pattern of Section 6.6: the model
-over-predicts clean air and under-predicts dirty air, with the effect growing
+Error by AQI band shows the mean reversion pattern of Section 6.6: the model
+over predicts clean air and under predicts dirty air, with the effect growing
 across horizons. The Very Unhealthy band contains only 17 holdout hours, so no
 conclusion is drawn from it.
 
@@ -623,7 +621,7 @@ conclusion is drawn from it.
 Claims of care are worth less than tests. Three were implemented and run on
 every feature build.
 
-**Test A — causality by truncation.** Delete every row after time `t`,
+**Test A: causality by truncation.** Delete every row after time `t`,
 recompute all 62 origin features, and compare with the values computed on the
 full series. Any feature that peeks forward will change.
 
@@ -632,8 +630,8 @@ full series. Any feature that peeks forward will change.
 This is the definitive test, because it makes no assumption about how a leak
 might occur.
 
-**Test B — target alignment.** The target on row `t` must equal the raw series
-at `t+h`, and forecast-side features must describe the target hour.
+**Test B: target alignment.** The target on row `t` must equal the raw series
+at `t+h`, and forecast side features must describe the target hour.
 
 > Result: pass at all horizons. At h=72, the row for 2024-04-21 00:00 carries
 > target 78.0, which is `us_aqi` at 2024-04-24 00:00; its temperature feature
@@ -661,9 +659,9 @@ them. A reimplementation is precisely how training/serving skew begins.
 SHAP values were computed on holdout rows using `TreeExplainer`. Full outputs
 in `reports/shap_*.csv` and `reports/figures/shap_*.png`.
 
-### 8.1 Importance shifts with horizon — a falsifiable prediction
+### 8.1 Importance shifts with horizon; a falsifiable prediction
 
-Section 5 argued that the day-1 to day-3 degradation is gentle because the
+Section 5 argued that the day 1 to day 3 degradation is gentle because the
 model has two information sources decaying at different rates: recent state,
 which decays fast, and seasonal plus forecast structure, which does not. If
 true, SHAP should show importance shifting from the first to the second as the
@@ -678,8 +676,8 @@ Share of total mean |SHAP|:
 | Pollutant history | 21.4% | 13.8% |
 | Calendar | 5.7% | **12.8%** |
 
-Origin-side features fall from 70.0% to 50.5% of total importance;
-forecast-side features rise from 29.9% to 49.6%. At three days out the model
+Origin side features fall from 70.0% to 50.5% of total importance;
+forecast side features rise from 29.9% to 49.6%. At three days out the model
 leans about equally on what it can observe now and on what the weather forecast
 tells it.
 
@@ -688,7 +686,7 @@ throughout this report would have been wrong and would have required rewriting.
 
 ### 8.2 The model independently rediscovered the seasonal chemistry
 
-Section 4.3 established from correlations that winter AQI is PM2.5-driven and
+Section 4.3 established from correlations that winter AQI is PM2.5 driven and
 summer shifts toward ozone. SHAP at h=72, computed from the fitted model with
 no knowledge of that analysis:
 
@@ -705,7 +703,7 @@ here: the model learned the physics rather than memorising the target.
 At h=24, `us_aqi_t` dominates (mean |SHAP| 15.25), followed by
 `wind_rmean24_f` at 4.16 — notably high for a variable whose raw correlation
 with AQI is only −0.30, and consistent with the cumulative-ventilation finding.
-A per-prediction waterfall plot is generated for the highest-AQI holdout hour
+A per-prediction waterfall plot is generated for the highest AQI holdout hour
 and doubles as the dashboard's explanation panel.
 
 ---
@@ -743,8 +741,8 @@ Hopsworks project `aqi_proj`, four feature groups:
 
 | Group | Contents |
 |---|---|
-| `aqi_raw_hourly` | cleaned hourly observations — the audit trail |
-| `aqi_features_h24/48/72` | model-ready features and target per horizon |
+| `aqi_raw_hourly` | cleaned hourly observations, the audit trail |
+| `aqi_features_h24/48/72` | model ready features and target per horizon |
 
 Both raw and computed features are stored. The raw group allows features to be
 rebuilt after a logic change; the feature groups guarantee that training and
@@ -758,7 +756,7 @@ duplicates, which makes the hourly job idempotent and safe to retry.
 
 ### 9.2 Model registry
 
-Six artifacts — three point heads and three alert heads — each registered with
+Six artifacts, three point heads and three alert heads, each registered with
 its holdout metrics and metadata including the exact evaluation window, the
 feature list, and the training environment versions.
 
@@ -771,7 +769,7 @@ diagnosis.
 ### 9.3 Model serving
 
 There is no Hopsworks deployment endpoint, deliberately. Predictions are
-computed hourly in batch and written to a JSON artifact. A real-time endpoint
+computed hourly in batch and written to a JSON artifact. A real time endpoint
 would add infrastructure without reducing any latency a user experiences,
 because the forecast only changes once an hour. Batch inference plus a static
 artifact is the appropriate pattern for this cadence.
@@ -789,19 +787,19 @@ runs.
 ### 9.5 Dashboard
 
 Streamlit, deployed on Community Cloud. It reads only committed JSON and the
-public Open-Meteo API, so it needs no Hopsworks credentials and deploys from a
+public Open Meteo API, so it needs no Hopsworks credentials and deploys from a
 four-package requirement file. The heavier development dependencies live in a
 separate `requirements-dev.txt`, because Hopsworks pulls in `confluent-kafka`,
 which needs a C library absent from the Streamlit runner.
 
 Sections, in order: the current reading with health guidance and live pollutant
-loads; a three-day outlook with the 90th-percentile band; current weather; the
+loads; a three-day outlook with the 90th percentile band; current weather; the
 assistant (Section 9.6); forecast-versus-actual accuracy; a per-prediction
 explanation; and the model comparison.
 
 **Two panels do work a typical dashboard does not.**
 
-*Forecast-versus-actual accuracy* scores every past forecast in
+*Forecast versus actual accuracy* scores every past forecast in
 `reports/history/` against what was subsequently observed, reporting MAE and
 bias per horizon. Most dashboards assert their own quality; this one shows it,
 including when it is wrong.
@@ -809,14 +807,14 @@ including when it is wrong.
 *Why this forecast* renders SHAP contributions for the current prediction as a
 diverging bar chart, one tab per horizon. These are computed in `predict.py` at
 prediction time rather than in the dashboard, because the model and feature row
-are already loaded there. That keeps the app dependency-light and guarantees
+are already loaded there. That keeps the app dependency light and guarantees
 the explanation always corresponds to the number it explains.
 
 **Design.** The layout is a bulletin rather than a monitoring console: the
 audience is a person deciding whether to go outside, not an operator watching a
 system. Two live themes carry state before any number is read. The *sky* theme
 derives a condition from cloud cover, rain, wind and local hour, and drives the
-page background, a hand-drawn glyph and an animated ambient layer: drifting
+page background, a hand drawn glyph and an animated ambient layer: drifting
 cloud, falling rain, blowing streaks, a breathing sun, twinkling stars or
 rolling haze. Smog is a distinct state, because showing a cheerful sun on a day
 when the air is dangerous would be actively misleading. The *air* theme gives
@@ -831,15 +829,15 @@ under `prefers-reduced-motion`.
 
 ### 9.6 Air quality assistant
 
-A narrow-scope chat helper answering one kind of question: given the air
+A narrow scope chat helper answering one kind of question: given the air
 quality and weather right now, and what the person says about themselves, is it
 sensible to go outside?
 
 **Grounding.** Every request carries a context block built from the same
 objects the page renders: current AQI and category, measured pollutant
 concentrations with their relative loads, current weather, the sky state, this
-system's three-day forecast including the alert-head upper bound, the current
-wall-clock time, and the typical daily AQI rhythm computed from the past week
+system's three day forecast including the alert head upper bound, the current
+wall clock time, and the typical daily AQI rhythm computed from the past week
 of observations. The model is instructed to treat that block as the only
 authoritative source and never to substitute general knowledge about
 Islamabad's air. This is why it can answer "can I run this evening" from live
@@ -851,16 +849,16 @@ states that exactly three forecast points exist with nothing between them. Both
 guards were added after the assistant recommended a time earlier the same day:
 it had no idea what "now" was, and with only three points it invented a fourth.
 
-**Safety.** This gives general public-health guidance of the kind an air
+**Safety.** This gives general public health guidance of the kind an air
 quality bulletin carries; it is not a clinician. Three rules are enforced in
 the prompt and stated in the interface. Severe symptoms are routed straight to
-emergency care with no air-quality discussion attached, because that discussion
+emergency care with no air quality discussion attached, because that discussion
 would only delay someone. It never names a condition the person has not named,
 and never comments on medication. Persistent or worsening symptoms get a
 recommendation to see a doctor. Scope is limited to air quality, weather and
 outdoor activity, with anything else politely redirected.
 
-The API key is read from Streamlit secrets with an environment-variable
+The API key is read from Streamlit secrets with an environment variable
 fallback, and is never committed.
 
 ---
@@ -881,15 +879,15 @@ The system distinguishes three categories, each with a different response:
 | Idempotent and self-healing | feature store push fails | log, continue, next run re-sends |
 | Correctness | schema mismatch, null feature at serving | fail immediately and loudly |
 
-Treating all three identically — crashing on everything or swallowing
-everything — is what separates a script from a pipeline.
+Treating all three identically, crashing on everything or swallowing
+everything, is what separates a script from a pipeline.
 
 ### 10.2 Incidents
 
 **Delta library missing.** Feature group creation failed because recent
 Hopsworks versions default to Delta format, which requires the `deltalake`
-package client-side. Delta is desirable here because it provides
-upsert-on-primary-key, so the dependency was added rather than the format
+package client side. Delta is desirable here because it provides
+upsert on primary key, so the dependency was added rather than the format
 downgraded.
 
 **Spurious `index` column.** Boolean-filtering a DataFrame under pandas 2.x
