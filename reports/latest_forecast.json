@@ -1,16 +1,16 @@
 {
   "city": "Islamabad",
-  "issued_at": "2026-10-14T01:12:11.361453+00:00",
-  "data_through": "2026-10-14T01:00:00+00:00",
-  "data_age_hours": 0.2,
-  "current_aqi": 75.0,
+  "issued_at": "2026-10-14T11:56:01.955516+00:00",
+  "data_through": "2026-10-14T11:00:00+00:00",
+  "data_age_hours": 0.9,
+  "current_aqi": 71.0,
   "current_category": "Moderate",
   "forecast": [
     {
       "horizon_h": 24,
-      "valid_at": "2026-10-15T01:00:00+00:00",
-      "aqi": 86.4,
-      "aqi_upper_q90": 99.9,
+      "valid_at": "2026-10-15T11:00:00+00:00",
+      "aqi": 87.2,
+      "aqi_upper_q90": 103.2,
       "category": "Moderate",
       "colour": "#ffff00",
       "alert": false,
@@ -21,42 +21,42 @@
           {
             "feature": "us_aqi_t",
             "label": "AQI now",
-            "effect": -19.43
+            "effect": -23.16
           },
           {
             "feature": "us_aqi_lag168_t",
             "label": "AQI 168h ago",
-            "effect": 4.13
+            "effect": 3.41
           },
           {
-            "feature": "pm2_5_delta24_t",
-            "label": "PM2.5 change over 24h",
-            "effect": -1.66
+            "feature": "wind_rmean24_f_h24",
+            "label": "Wind, 24h average (forecast)",
+            "effect": 2.19
           },
           {
             "feature": "pm2_5_lag1_t",
             "label": "PM2.5 1h ago",
-            "effect": -1.39
-          },
-          {
-            "feature": "us_aqi_lag48_t",
-            "label": "AQI 48h ago",
-            "effect": -1.12
-          },
-          {
-            "feature": "temp_rmean24_f_h24",
-            "label": "Temperature, 24h average (forecast)",
-            "effect": -0.99
-          },
-          {
-            "feature": "pm10_r24h_t",
-            "label": "PM10, 24h average",
-            "effect": 0.95
+            "effect": -1.37
           },
           {
             "feature": "doy_cos_f_h24",
             "label": "Season (forecast)",
-            "effect": -0.82
+            "effect": -1.28
+          },
+          {
+            "feature": "temp_rmean24_f_h24",
+            "label": "Temperature, 24h average (forecast)",
+            "effect": -1.14
+          },
+          {
+            "feature": "precip_rsum24_f_h24",
+            "label": "Rain, 24h total (forecast)",
+            "effect": -1.01
+          },
+          {
+            "feature": "us_aqi_lag48_t",
+            "label": "AQI 48h ago",
+            "effect": -0.98
           }
         ]
       },
@@ -66,24 +66,24 @@
           "selected_by": "best by RMSE",
           "metric": "RMSE",
           "score": 13.28232793252686,
-          "age_days": 31.7
+          "age_days": 32.2
         },
         "alert": {
           "version": 20,
           "selected_by": "best by alert_f1",
           "metric": "alert_f1",
           "score": 0.7731513083048918,
-          "age_days": 29.7
+          "age_days": 30.2
         }
       }
     },
     {
       "horizon_h": 48,
-      "valid_at": "2026-10-16T01:00:00+00:00",
-      "aqi": 84.5,
-      "aqi_upper_q90": 112.6,
-      "category": "Moderate",
-      "colour": "#ffff00",
+      "valid_at": "2026-10-16T11:00:00+00:00",
+      "aqi": 105.4,
+      "aqi_upper_q90": 121.6,
+      "category": "Unhealthy for Sensitive Groups",
+      "colour": "#ff7e00",
       "alert": false,
       "alert_reason": null,
       "explanation": {
@@ -92,42 +92,42 @@
           {
             "feature": "us_aqi_t",
             "label": "AQI now",
-            "effect": -9.2
-          },
-          {
-            "feature": "doy_sin_f_h48",
-            "label": "Season (forecast)",
-            "effect": -3.34
-          },
-          {
-            "feature": "sulphur_dioxide_r24h_t",
-            "label": "SO\u2082, 24h average",
-            "effect": -2.82
-          },
-          {
-            "feature": "wind_rmean48_f_h48",
-            "label": "Wind, 48h average (forecast)",
-            "effect": 2.68
-          },
-          {
-            "feature": "temp_rmean48_f_h48",
-            "label": "Temperature, 48h average (forecast)",
-            "effect": -2.58
-          },
-          {
-            "feature": "us_aqi_rmin72_t",
-            "label": "AQI low in last 72h",
-            "effect": -2.21
-          },
-          {
-            "feature": "wind_rmean24_f_h48",
-            "label": "Wind, 24h average (forecast)",
-            "effect": 2.21
+            "effect": -10.21
           },
           {
             "feature": "us_aqi_rmean168_t",
             "label": "AQI, 168h average",
-            "effect": 2.2
+            "effect": 4.88
+          },
+          {
+            "feature": "hour_sin_f_h48",
+            "label": "Time of day (forecast)",
+            "effect": 3.91
+          },
+          {
+            "feature": "wind_rmean48_f_h48",
+            "label": "Wind, 48h average (forecast)",
+            "effect": 3.7
+          },
+          {
+            "feature": "wind_rmean24_f_h48",
+            "label": "Wind, 24h average (forecast)",
+            "effect": 2.44
+          },
+          {
+            "feature": "us_aqi_rmin72_t",
+            "label": "AQI low in last 72h",
+            "effect": -2.35
+          },
+          {
+            "feature": "us_aqi_lag168_t",
+            "label": "AQI 168h ago",
+            "effect": 2.31
+          },
+          {
+            "feature": "sulphur_dioxide_r24h_t",
+            "label": "SO\u2082, 24h average",
+            "effect": -2.11
           }
         ]
       },
@@ -137,68 +137,68 @@
           "selected_by": "best by RMSE",
           "metric": "RMSE",
           "score": 17.12627320612707,
-          "age_days": 41.3
+          "age_days": 41.7
         },
         "alert": {
           "version": 24,
           "selected_by": "best by alert_f1",
           "metric": "alert_f1",
           "score": 0.7406467977171847,
-          "age_days": 25.7
+          "age_days": 26.2
         }
       }
     },
     {
       "horizon_h": 72,
-      "valid_at": "2026-10-17T01:00:00+00:00",
-      "aqi": 99.3,
-      "aqi_upper_q90": 118.3,
-      "category": "Moderate",
-      "colour": "#ffff00",
+      "valid_at": "2026-10-17T11:00:00+00:00",
+      "aqi": 100.4,
+      "aqi_upper_q90": 131.5,
+      "category": "Unhealthy for Sensitive Groups",
+      "colour": "#ff7e00",
       "alert": false,
       "alert_reason": null,
       "explanation": {
         "baseline": 111.7,
         "drivers": [
           {
-            "feature": "wind_rmean48_f_h72",
-            "label": "Wind, 48h average (forecast)",
-            "effect": 6.64
+            "feature": "doy_sin_f_h72",
+            "label": "Season (forecast)",
+            "effect": -8.49
           },
           {
             "feature": "us_aqi_t",
             "label": "AQI now",
-            "effect": -6.64
+            "effect": -6.87
+          },
+          {
+            "feature": "wind_rmean48_f_h72",
+            "label": "Wind, 48h average (forecast)",
+            "effect": 5.08
           },
           {
             "feature": "us_aqi_rmean168_t",
             "label": "AQI, 168h average",
-            "effect": 3.97
+            "effect": 4.58
+          },
+          {
+            "feature": "hour_sin_f_h72",
+            "label": "Time of day (forecast)",
+            "effect": 3.6
+          },
+          {
+            "feature": "temp_rmean24_f_h72",
+            "label": "Temperature, 24h average (forecast)",
+            "effect": -2.73
+          },
+          {
+            "feature": "doy_cos_f_h72",
+            "label": "Season (forecast)",
+            "effect": -2.68
           },
           {
             "feature": "sulphur_dioxide_r24h_t",
             "label": "SO\u2082, 24h average",
-            "effect": -2.95
-          },
-          {
-            "feature": "doy_sin_f_h72",
-            "label": "Season (forecast)",
-            "effect": -2.8
-          },
-          {
-            "feature": "dew_point_2m_f_h72",
-            "label": "Dew point (forecast)",
-            "effect": -2.25
-          },
-          {
-            "feature": "wind_rmean24_f_h72",
-            "label": "Wind, 24h average (forecast)",
-            "effect": 2.2
-          },
-          {
-            "feature": "us_aqi_lag168_t",
-            "label": "AQI 168h ago",
-            "effect": 1.99
+            "effect": -2.57
           }
         ]
       },
@@ -208,14 +208,14 @@
           "selected_by": "best by RMSE",
           "metric": "RMSE",
           "score": 18.580617729161666,
-          "age_days": 44.4
+          "age_days": 44.9
         },
         "alert": {
           "version": 20,
           "selected_by": "best by alert_f1",
           "metric": "alert_f1",
           "score": 0.7489530526779811,
-          "age_days": 28.7
+          "age_days": 29.2
         }
       }
     }
@@ -223,9 +223,9 @@
   "warnings": [
     "aqi_point_h24 v18 is 32 days old (threshold 14) - retraining may be stalled",
     "aqi_alert_h24 v20 is 30 days old (threshold 14) - retraining may be stalled",
-    "aqi_point_h48 v7 is 41 days old (threshold 14) - retraining may be stalled",
+    "aqi_point_h48 v7 is 42 days old (threshold 14) - retraining may be stalled",
     "aqi_alert_h48 v24 is 26 days old (threshold 14) - retraining may be stalled",
-    "aqi_point_h72 v1 is 44 days old (threshold 14) - retraining may be stalled",
+    "aqi_point_h72 v1 is 45 days old (threshold 14) - retraining may be stalled",
     "aqi_alert_h72 v20 is 29 days old (threshold 14) - retraining may be stalled"
   ]
 }
